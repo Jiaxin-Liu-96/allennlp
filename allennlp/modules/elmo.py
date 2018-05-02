@@ -141,7 +141,9 @@ class Elmo(torch.nn.Module):
             mask = mask_without_bos_eos
             elmo_representations = representations
 
-        return {'elmo_representations': elmo_representations, 'mask': mask}
+        return {'elmo_representations': elmo_representations,
+                'mask': mask,
+                "layer_activations": layer_activations}
 
     @classmethod
     def from_params(cls, params: Params) -> 'Elmo':
