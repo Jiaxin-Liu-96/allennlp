@@ -75,7 +75,6 @@ class SpanConstituencyParserAnalysis(Model):
     """
     def __init__(self,
                  vocab: Vocabulary,
-                 text_field_embedder: TextFieldEmbedder,
                  span_extractor: SpanExtractor,
                  num_elmo_layers: int,
                  elmo_weights: str,
@@ -86,7 +85,6 @@ class SpanConstituencyParserAnalysis(Model):
                  evalb_directory_path: str = None) -> None:
         super(SpanConstituencyParserAnalysis, self).__init__(vocab, regularizer)
 
-        self.text_field_embedder = text_field_embedder
         self.span_extractor = span_extractor
         self.num_classes = self.vocab.get_vocab_size("labels")
         output_dim = span_extractor.get_output_dim()
@@ -101,7 +99,7 @@ class SpanConstituencyParserAnalysis(Model):
         self.tag_projection_layers = [TimeDistributed(Linear(output_dim, self.num_classes))
                                       for _ in range(self._num_elmo_layers + 1)]
 
-        representation_dim = text_field_embedder.get_output_dim()
+        representation_dim = self.elmo.get_output_dim()
         check_dimensions_match(representation_dim,
                                span_extractor.get_input_dim(),
                                "encoder input dim",
@@ -469,7 +467,6 @@ class SpanConstituencyParserAnalysis(Model):
     @classmethod
     def from_params(cls, vocab: Vocabulary, params: Params) -> 'SpanConstituencyParserAnalysis':
         embedder_params = params.pop("text_field_embedder")
-        text_field_embedder = TextFieldEmbedder.from_params(vocab, embedder_params)
         span_extractor = SpanExtractor.from_params(params.pop("span_extractor"))
 
         num_elmo_layers = params.pop_int("num_elmo_layers")
@@ -482,7 +479,6 @@ class SpanConstituencyParserAnalysis(Model):
         params.assert_empty(cls.__name__)
 
         return cls(vocab=vocab,
-                   text_field_embedder=text_field_embedder,
                    span_extractor=span_extractor,
                    num_elmo_layers=num_elmo_layers,
                    elmo_options=elmo_options,
