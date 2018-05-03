@@ -69,7 +69,8 @@ class Elmo(torch.nn.Module):
                  requires_grad: bool = False,
                  do_layer_norm: bool = False,
                  dropout: float = 0.5,
-                 module: torch.nn.Module = None) -> None:
+                 module: torch.nn.Module = None,
+                 max_pool=False) -> None:
         super(Elmo, self).__init__()
 
         logging.info("Initializing ELMo")
@@ -81,11 +82,20 @@ class Elmo(torch.nn.Module):
         else:
             self._elmo_lstm = _ElmoBiLm(options_file, weight_file, requires_grad=requires_grad)
         self._dropout = Dropout(p=dropout)
-        self._scalar_mixes: Any = []
-        for k in range(num_output_representations):
-            scalar_mix = ScalarMix(self._elmo_lstm.num_layers, do_layer_norm=do_layer_norm)
-            self.add_module('scalar_mix_{}'.format(k), scalar_mix)
-            self._scalar_mixes.append(scalar_mix)
+
+        self.max_pool = max_pool
+        self.num_output_representations = num_output_representations
+        if not max_pool:
+            self._scalar_mixes: Any = []
+            for k in range(num_output_representations):
+                scalar_mix = ScalarMix(self._elmo_lstm.num_layers, do_layer_norm=do_layer_norm)
+                self.add_module('scalar_mix_{}'.format(k), scalar_mix)
+                self._scalar_mixes.append(scalar_mix)
+        else:
+            self._gammas = torch.nn.ParameterList()
+            for k in range(num_output_representations):
+                gamma = torch.nn.Parameter(torch.FloatTensor(1).fill_(1))
+                self._gammas.append(gamma)
 
     def get_output_dim(self):
         return self._elmo_lstm.get_output_dim()
@@ -124,9 +134,19 @@ class Elmo(torch.nn.Module):
 
         # compute the elmo representations
         representations = []
-        for i in range(len(self._scalar_mixes)):
-            scalar_mix = getattr(self, 'scalar_mix_{}'.format(i))
-            representation_with_bos_eos = scalar_mix(layer_activations, mask_with_bos_eos)
+        for i in range(self.num_output_representations):
+            if not self.max_pool:
+                scalar_mix = getattr(self, 'scalar_mix_{}'.format(i))
+                representation_with_bos_eos = scalar_mix(layer_activations, mask_with_bos_eos)
+            else:
+                # layer_activations is list of tensors shaped
+                # (batch_size, timesteps + 2, embedding_dim)
+                # take max over layers
+                max_vals, _ = torch.max(torch.cat(
+                    [layer.unsqueeze(0) for layer in layer_activations], dim=0),
+                    dim=0)
+                representation_with_bos_eos = max_vals * self._gammas[i]
+
             representation_without_bos_eos, mask_without_bos_eos = remove_sentence_boundaries(
                     representation_with_bos_eos, mask_with_bos_eos
             )

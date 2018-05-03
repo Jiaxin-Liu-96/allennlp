@@ -39,7 +39,8 @@ class ElmoTokenEmbedder(TokenEmbedder):
                  do_layer_norm: bool = False,
                  dropout: float = 0.5,
                  requires_grad: bool = False,
-                 projection_dim: int = None) -> None:
+                 projection_dim: int = None,
+                 max_pool: bool = False) -> None:
         super(ElmoTokenEmbedder, self).__init__()
 
         self._elmo = Elmo(options_file,
@@ -47,7 +48,8 @@ class ElmoTokenEmbedder(TokenEmbedder):
                           1,
                           do_layer_norm=do_layer_norm,
                           dropout=dropout,
-                          requires_grad=requires_grad)
+                          requires_grad=requires_grad,
+                          max_pool=max_pool)
         if projection_dim:
             self._projection = torch.nn.Linear(self._elmo.get_output_dim(), projection_dim)
         else:
@@ -87,10 +89,12 @@ class ElmoTokenEmbedder(TokenEmbedder):
         do_layer_norm = params.pop_bool('do_layer_norm', False)
         dropout = params.pop_float("dropout", 0.5)
         projection_dim = params.pop_int("projection_dim", None)
+        max_pool = params.pop_bool("max_pool", False)
         params.assert_empty(cls.__name__)
         return cls(options_file=options_file,
                    weight_file=weight_file,
                    do_layer_norm=do_layer_norm,
                    dropout=dropout,
                    requires_grad=requires_grad,
-                   projection_dim=projection_dim)
+                   projection_dim=projection_dim,
+                   max_pool=max_pool)
