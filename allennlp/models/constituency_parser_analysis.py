@@ -115,6 +115,9 @@ class SpanConstituencyParserAnalysis(Model):
             metrics = {label: F1Measure(index) for index, label
                        in id_to_labels.items()}
             self.label_f1[f"layer_{i}"] = metrics
+
+        self.label_f1["mixed"] = {label: F1Measure(index) for index, label in id_to_labels.items()}
+
         self.tag_accuracies = {f"layer_{i}": CategoricalAccuracy() for i in range(num_elmo_layers)}
         self.tag_accuracies["mixed"] = CategoricalAccuracy()
 
