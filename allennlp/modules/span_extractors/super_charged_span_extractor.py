@@ -3,7 +3,6 @@ from overrides import overrides
 
 from allennlp.common.params import Params
 from allennlp.modules.span_extractors.span_extractor import SpanExtractor
-from allennlp.modules.time_distributed import TimeDistributed
 from allennlp.nn import util
 
 @SpanExtractor.register("super_charged")
@@ -39,7 +38,7 @@ class SuperChargedSpanExtractor(SpanExtractor):
         return self._input_dim
 
     def get_output_dim(self) -> int:
-        return self._input_dim
+        return 4 * self._input_dim
 
     @overrides
     def forward(self,
@@ -86,19 +85,33 @@ class SuperChargedSpanExtractor(SpanExtractor):
         # Shape: (batch_size, num_spans, max_batch_span_width, embedding_dim)
         span_embeddings = util.batched_index_select(sequence_tensor, span_indices, flat_span_indices)
 
-        maxpooled = torch.max(span_embeddings, 2)
+        maxpooled = torch.max(span_embeddings, 2)[0]
         meanpooled = torch.mean(span_embeddings, 2)
+
+        # Now extract the endpoints:
+        if span_indices_mask is not None:
+            # It's not strictly necessary to multiply the span indices by the mask here,
+            # but it's possible that the span representation was padded with something other
+            # than 0 (such as -1, which would be an invalid index), so we do so anyway to
+            # be safe.
+            span_starts = span_starts.squeeze(-1) * span_indices_mask
+            span_ends = span_ends.squeeze(-1) * span_indices_mask
+
+        start_embeddings = util.batched_index_select(sequence_tensor, span_starts.squeeze(-1))
+        end_embeddings = util.batched_index_select(sequence_tensor, span_ends.squeeze(-1))
+
+        final_representation = torch.cat([start_embeddings, end_embeddings, maxpooled, meanpooled], -1)
 
         if span_indices_mask is not None:
             # Above we were masking the widths of spans with respect to the max
             # span width in the batch. Here we are masking the spans which were
             # originally passed in as padding.
-            return attended_text_embeddings * span_indices_mask.unsqueeze(-1).float()
+            return final_representation * span_indices_mask.unsqueeze(-1).float()
 
-        return attended_text_embeddings
+        return final_representation
 
     @classmethod
-    def from_params(cls, params: Params) -> "SelfAttentiveSpanExtractor":
+    def from_params(cls, params: Params) -> "SuperChargedSpanExtractor":
         input_dim = params.pop_int("input_dim")
         params.assert_empty(cls.__name__)
         return SuperChargedSpanExtractor(input_dim=input_dim)
