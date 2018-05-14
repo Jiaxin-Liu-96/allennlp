@@ -263,8 +263,8 @@ class ElmoEmbedder():
         # Tokenizes the sentences.
         sentences = [line.strip() for line in input_file if line.strip()]
         split_sentences = [sentence.split() for sentence in sentences]
-        # Uses the sentence as the key.
-        embedded_sentences = zip(sentences, self.embed_sentences(split_sentences, batch_size))
+        # Uses the sentence index as the key.
+        embedded_sentences = enumerate(self.embed_sentences(split_sentences, batch_size))
 
         logger.info("Processing sentences.")
         with h5py.File(output_file_path, 'w') as fout:
