@@ -46,6 +46,7 @@ class SuperChargedSpanExtractor(SpanExtractor):
                 span_indices: torch.LongTensor,
                 sequence_mask: torch.LongTensor = None,
                 span_indices_mask: torch.LongTensor = None) -> torch.FloatTensor:
+
         # both of shape (batch_size, num_spans, 1)
         span_starts, span_ends = span_indices.split(1, dim=-1)
 
@@ -96,9 +97,12 @@ class SuperChargedSpanExtractor(SpanExtractor):
             # be safe.
             span_starts = span_starts.squeeze(-1) * span_indices_mask
             span_ends = span_ends.squeeze(-1) * span_indices_mask
+        else:
+            span_starts = span_starts.squeeze(-1)
+            span_ends = span_ends.squeeze(-1)
 
-        start_embeddings = util.batched_index_select(sequence_tensor, span_starts.squeeze(-1))
-        end_embeddings = util.batched_index_select(sequence_tensor, span_ends.squeeze(-1))
+        start_embeddings = util.batched_index_select(sequence_tensor, span_starts)
+        end_embeddings = util.batched_index_select(sequence_tensor, span_ends)
 
         final_representation = torch.cat([start_embeddings, end_embeddings, maxpooled, meanpooled], -1)
 
