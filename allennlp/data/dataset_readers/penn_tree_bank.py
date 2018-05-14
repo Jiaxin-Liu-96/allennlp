@@ -3,6 +3,8 @@ from typing import Dict, List, Tuple
 import logging
 import os
 
+import h5py
+import numpy
 from overrides import overrides
 # NLTK is so performance orientated (ha ha) that they have lazy imports. Why? Who knows.
 from nltk.corpus.reader.bracket_parse import BracketParseCorpusReader # pylint: disable=no-name-in-module
@@ -11,7 +13,7 @@ from nltk.tree import Tree
 from allennlp.common import Params
 from allennlp.common.file_utils import cached_path
 from allennlp.data.dataset_readers.dataset_reader import DatasetReader
-from allennlp.data.fields import TextField, SpanField, SequenceLabelField, ListField, MetadataField, Field
+from allennlp.data.fields import TextField, SpanField, SequenceLabelField, ListField, MetadataField, ArrayField, Field
 from allennlp.data.instance import Instance
 from allennlp.data.token_indexers import TokenIndexer, SingleIdTokenIndexer
 from allennlp.data.tokenizers import Token
@@ -19,6 +21,27 @@ from allennlp.data.dataset_readers.dataset_utils.span_utils import enumerate_spa
 from allennlp.common.checks import ConfigurationError
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+
+def load_language_model_embeddings(embedding_file: str):
+    """
+    Load the language model embeddings from the file. The file is keyed by sentence_id.
+    Each sentence contains one h5py dataset of shape (3, n_tokens, 1024),
+    with the embeddings for each of the three layers in the language model.
+    Parameters
+    ----------
+    embedding_file : str, required.
+        The path to the hdf5 file containing a sentence_id -> numpy.float32 array.
+    Returns
+    -------
+    A dictionary mapping sentence_ids -> tensors of shape (3, len(sentence), 1024).
+    """
+    language_model_embeddings = {}
+    with h5py.File(embedding_file, 'r') as hdf5_file:
+        for key in hdf5_file.keys():
+            language_model_embeddings[key] = hdf5_file[key][...].astype("float32")
+
+    return language_model_embeddings
 
 
 @DatasetReader.register("ptb_trees")
@@ -54,8 +77,11 @@ class PennTreeBankConstituencySpanDatasetReader(DatasetReader):
         # if `file_path` is a URL, redirect to the cache
         file_path = cached_path(file_path)
         directory, filename = os.path.split(file_path)
+        embedding_name = ".".join(filename.split(".")[:-1] + ["embeddings.hdf5"])
+
+        embedding_dict = load_language_model_embeddings(os.path.join(directory, embedding_name))
         logger.info("Reading instances from lines in file at: %s", file_path)
-        for parse in BracketParseCorpusReader(root=directory, fileids=[filename]).parsed_sents():
+        for i, parse in enumerate(BracketParseCorpusReader(root=directory, fileids=[filename]).parsed_sents()):
 
             self._strip_functional_tags(parse)
             # This is un-needed and clutters the label space.
@@ -63,11 +89,12 @@ class PennTreeBankConstituencySpanDatasetReader(DatasetReader):
             if parse.label() == "VROOT":
                 parse = parse[0]
             pos_tags = [x[1] for x in parse.pos()] if self._use_pos_tags else None
-            yield self.text_to_instance(parse.leaves(), pos_tags, parse)
+            yield self.text_to_instance(parse.leaves(), embedding_dict[i], pos_tags, parse)
 
     @overrides
     def text_to_instance(self, # type: ignore
                          tokens: List[str],
+                         lm_embedding: numpy.ndarray,
                          pos_tags: List[str] = None,
                          gold_tree: Tree = None) -> Instance:
         """
@@ -135,6 +162,7 @@ class PennTreeBankConstituencySpanDatasetReader(DatasetReader):
             metadata["pos_tags"] = pos_tags
 
         fields["metadata"] = MetadataField(metadata)
+        fields["lm_embeddings"] = ArrayField(lm_embedding)
 
         span_list_field: ListField = ListField(spans)
         fields["spans"] = span_list_field

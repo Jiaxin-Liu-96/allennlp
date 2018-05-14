@@ -8,7 +8,7 @@ from nltk import Tree
 from allennlp.common import Params
 from allennlp.common.checks import check_dimensions_match
 from allennlp.data import Vocabulary
-from allennlp.modules import TimeDistributed, TextFieldEmbedder, Elmo
+from allennlp.modules import TimeDistributed, TextFieldEmbedder, Elmo, ScalarMix
 from allennlp.modules.span_extractors.span_extractor import SpanExtractor
 from allennlp.models.model import Model
 from allennlp.nn import InitializerApplicator, RegularizerApplicator
@@ -75,9 +75,6 @@ class SpanConstituencyParserAnalysis(Model):
                  vocab: Vocabulary,
                  span_extractor: SpanExtractor,
                  num_elmo_layers: int,
-                 elmo_weights: str,
-                 elmo_type: str,
-                 elmo_options: str,
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None,
                  evalb_directory_path: str = None) -> None:
@@ -86,14 +83,6 @@ class SpanConstituencyParserAnalysis(Model):
         self.span_extractor = span_extractor
         self.num_classes = self.vocab.get_vocab_size("labels")
         output_dim = span_extractor.get_output_dim()
-
-        from calypso.train import load_encoder
-        from calypso.token_embedders import ELMoWrapper
-        if elmo_type == "lstm":
-            self.elmo = Elmo(elmo_options, elmo_weights, num_output_representations=1, dropout=0.0)
-        else:
-            module = ELMoWrapper(load_encoder(elmo_options, elmo_weights, -1), num_elmo_layers)
-            self.elmo = Elmo(None, None, num_output_representations=1, dropout=0.0, module=module)
 
         self._num_elmo_layers = num_elmo_layers
         self.tag_projection_layers = []
@@ -107,6 +96,9 @@ class SpanConstituencyParserAnalysis(Model):
                                span_extractor.get_input_dim(),
                                "encoder input dim",
                                "span extractor input dim")
+
+
+        self.scalar_mix = ScalarMix(num_elmo_layers)
         id_to_labels = {index: label for index, label in
                         self.vocab.get_index_to_token_vocabulary("labels").items() if "-" not in label}
 
@@ -131,7 +123,8 @@ class SpanConstituencyParserAnalysis(Model):
 
     @overrides
     def forward(self,  # type: ignore
-                tokens: Dict[str, torch.LongTensor],
+                tokens: Dict[str, torch.FloatTensor],
+                lm_embeddings: torch.FloatTensor,
                 spans: torch.LongTensor,
                 metadata: List[Dict[str, Any]],
                 span_labels: torch.LongTensor = None) -> Dict[str, torch.Tensor]:
@@ -185,11 +178,9 @@ class SpanConstituencyParserAnalysis(Model):
         loss : ``torch.FloatTensor``, optional
             A scalar loss to be optimised.
         """
-        elmo_output = self.elmo(tokens["elmo"])
-
-        all_elmo_layers = elmo_output["layer_activations"]
+        all_elmo_layers = [x.squeeze(1) for x in lm_embeddings.split(1, dim=1)]
         # This is the mixed layer.
-        all_elmo_layers.append(elmo_output["elmo_representations"][0])
+        all_elmo_layers.append(self.scalar_mix(all_elmo_layers))
 
         mask = get_text_field_mask(tokens)
         # Looking at the span start index is enough to know if
