@@ -64,7 +64,7 @@ class EvalbBracketingScorer(Metric):
         if not os.path.exists(self._evalb_program_path):
             raise ConfigurationError("You must compile the EVALB scorer before using it."
                                      " Run 'make' in the 'scripts/EVALB' directory.")
-        tempdir = tempfile.gettempdir()
+        tempdir = tempfile.mkdtemp()
         gold_path = os.path.join(tempdir, "gold.txt")
         predicted_path = os.path.join(tempdir, "predicted.txt")
         output_path = os.path.join(tempdir, "output.txt")
@@ -89,6 +89,8 @@ class EvalbBracketingScorer(Metric):
                     self._correct_predicted_brackets += numeric_line[5]
                     self._gold_brackets += numeric_line[6]
                     self._predicted_brackets += numeric_line[7]
+
+        os.rmdir(tempdir)
 
     @overrides
     def get_metric(self, reset: bool = False):
