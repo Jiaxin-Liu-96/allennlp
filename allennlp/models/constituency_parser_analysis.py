@@ -74,6 +74,7 @@ class SpanConstituencyParserAnalysis(Model):
     def __init__(self,
                  vocab: Vocabulary,
                  span_extractor: SpanExtractor,
+                 layer_index: int, 
                  num_elmo_layers: int,
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None,
@@ -85,11 +86,8 @@ class SpanConstituencyParserAnalysis(Model):
         output_dim = span_extractor.get_output_dim()
 
         self._num_elmo_layers = num_elmo_layers
-        self.tag_projection_layers = []
-        for i in range(self._num_elmo_layers + 1):
-            projection = TimeDistributed(Linear(output_dim, self.num_classes))
-            self.add_module(f"linear_{i}", projection)
-            self.tag_projection_layers.append(projection)
+        self._layer_index = layer_index
+        self.tag_projection_layer = TimeDistributed(Linear(output_dim, self.num_classes))
 
         representation_dim = 1024
         check_dimensions_match(representation_dim,
@@ -102,23 +100,15 @@ class SpanConstituencyParserAnalysis(Model):
         id_to_labels = {index: label for index, label in
                         self.vocab.get_index_to_token_vocabulary("labels").items() if "-" not in label}
 
-        self.label_f1 = {}
-        for i in range(num_elmo_layers):
-            metrics = {label: F1Measure(index) for index, label
-                       in id_to_labels.items()}
-            self.label_f1[f"layer_{i}"] = metrics
+        self.label_f1 = {label: F1Measure(index) for index, label
+                                   in id_to_labels.items()}
 
-        self.label_f1["mixed"] = {label: F1Measure(index) for index, label in id_to_labels.items()}
-
-        self.tag_accuracies = {f"layer_{i}": CategoricalAccuracy() for i in range(num_elmo_layers)}
-        self.tag_accuracies["mixed"] = CategoricalAccuracy()
+        self.tag_accuracy = CategoricalAccuracy()
 
         if evalb_directory_path is not None:
-            self._evalb_scorers = {f"layer_{i}":EvalbBracketingScorer(evalb_directory_path)
-                                   for i in range(num_elmo_layers)}
-            self._evalb_scorers["mixed"] = EvalbBracketingScorer(evalb_directory_path)
+            self._evalb_scorer = EvalbBracketingScorer(evalb_directory_path)
         else:
-            self._evalb_scorers = None
+            self._evalb_scorer = None
         initializer(self)
 
     @overrides
@@ -179,9 +169,12 @@ class SpanConstituencyParserAnalysis(Model):
             A scalar loss to be optimised.
         """
         all_elmo_layers = [x.squeeze(1) for x in lm_embeddings.split(1, dim=1)]
-        # This is the mixed layer.
-        all_elmo_layers.append(self.scalar_mix(all_elmo_layers))
 
+        if self._layer_index == "mixed":
+            elmo_representations = self.scalar_mix(all_elmo_layers)
+        else:
+            elmo_representations = all_elmo_layers[self._layer_index]
+        
         mask = get_text_field_mask(tokens)
         # Looking at the span start index is enough to know if
         # this is padding or not. Shape: (batch_size, num_spans)
@@ -195,47 +188,38 @@ class SpanConstituencyParserAnalysis(Model):
 
         num_spans = get_lengths_from_binary_sequence_mask(span_mask)
 
-        span_representations = [self.span_extractor(text, spans, mask, span_mask)
-                                for text in all_elmo_layers]
-        per_layer_logits = []
-        per_layer_softmax = []
-        for representations, linear in zip(span_representations, self.tag_projection_layers):
-            logits = linear(representations)
-            per_layer_logits.append(logits)
-            per_layer_softmax.append(last_dim_softmax(logits, span_mask.unsqueeze(-1)))
+        span_representations = self.span_extractor(elmo_representations, spans, mask, span_mask)
+        logits = self.tag_projection_layer(span_representations)
+        class_probabilities = last_dim_softmax(logits, span_mask.unsqueeze(-1))
 
         output_dict = {
-                "class_probabilities": per_layer_softmax[-1],
+                "class_probabilities": class_probabilities,
                 "spans": spans,
                 "tokens": [meta["tokens"] for meta in metadata],
                 "pos_tags": [meta.get("pos_tags") for meta in metadata],
                 "num_spans": num_spans
         }
         if span_labels is not None:
-            loss = 0.0
-            for logits, probs, metric in zip(per_layer_logits, per_layer_softmax, self.tag_accuracies.values()):
-                this_layer_loss = sequence_cross_entropy_with_logits(logits, span_labels, span_mask)
-                loss = loss + this_layer_loss
-                metric(probs, span_labels, span_mask)
+            loss = sequence_cross_entropy_with_logits(logits, span_labels, span_mask)
+            self.tag_accuracy(class_probabilities, span_labels, mask)
             output_dict["loss"] = loss
 
         # The evalb score is expensive to compute, so we only compute
         # it for the validation and test sets.
         batch_gold_trees = [meta.get("gold_tree") for meta in metadata]
-        if all(batch_gold_trees) and self._evalb_scorers is not None and not self.training:
+        if all(batch_gold_trees) and self._evalb_scorer is not None and not self.training:
             gold_pos_tags: List[List[str]] = [list(zip(*tree.pos()))[1]
                                               for tree in batch_gold_trees]
 
-            for probs, evalb, f1_metrics in zip(per_layer_softmax, self._evalb_scorers.values(), self.label_f1.values()):
-                predicted_trees = self.construct_trees(probs.cpu().data,
-                                                       spans.cpu().data,
-                                                       num_spans.data,
-                                                       output_dict["tokens"],
-                                                       gold_pos_tags)
-                evalb(predicted_trees, batch_gold_trees)
+            predicted_trees = self.construct_trees(class_probabilities.cpu().data,
+                                                   spans.cpu().data,
+                                                   num_spans.data,
+                                                   output_dict["tokens"],
+                                                   gold_pos_tags)
+            self._evalb_scorer(predicted_trees, batch_gold_trees)
 
-                for f1_metric in f1_metrics.values():
-                    f1_metric(probs, span_labels, span_mask)
+            for f1_metric in self.label_f1.values():
+                f1_metric(class_probabilities, span_labels, span_mask)
 
         return output_dict
 
@@ -459,22 +443,19 @@ class SpanConstituencyParserAnalysis(Model):
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
         all_metrics = {}
 
-        for name, metric in self.tag_accuracies.items():
-            all_metrics[name + "_accuracy"] = metric.get_metric(reset=reset)
+        all_metrics["tag_accuracy"] = self.tag_accuracy.get_metric(reset=reset)
 
-        for layer, metric_dict in self.label_f1.items():
-            for label, metric in metric_dict.items():
-                base_name = f"{layer}_{label}"
-                f1, precision, recall = metric.get_metric(reset)
-                all_metrics[base_name + "_" + "f1"] = f1
-                all_metrics[base_name + "_" + "recall"] = recall
-                all_metrics[base_name + "_" + "precision"] = precision
+        for label, metric in self.label_f1.items():
+            base_name = f"{label}"
+            f1, precision, recall = metric.get_metric(reset)
+            all_metrics[base_name + "_" + "f1"] = f1
+            all_metrics[base_name + "_" + "recall"] = recall
+            all_metrics[base_name + "_" + "precision"] = precision
 
-        if self._evalb_scorers is not None:
-            for name, metric in self._evalb_scorers.items():
-                evalb_metrics = metric.get_metric(reset=reset)
-                for metric_name, evalb_metric in evalb_metrics.items():
-                    all_metrics[name + "_" + metric_name] = evalb_metric
+        if self._evalb_scorer is not None:
+            evalb_metrics = self._evalb_scorer.get_metric(reset=reset)
+            for metric_name, evalb_metric in evalb_metrics.items():
+                all_metrics[metric_name] = evalb_metric
 
         return all_metrics
 
@@ -483,6 +464,7 @@ class SpanConstituencyParserAnalysis(Model):
         span_extractor = SpanExtractor.from_params(params.pop("span_extractor"))
 
         num_elmo_layers = params.pop_int("num_elmo_layers")
+        layer_index = params.pop_int("layer_index")
         initializer = InitializerApplicator.from_params(params.pop('initializer', []))
         regularizer = RegularizerApplicator.from_params(params.pop('regularizer', []))
         evalb_directory_path = params.pop("evalb_directory_path", None)
@@ -490,6 +472,7 @@ class SpanConstituencyParserAnalysis(Model):
 
         return cls(vocab=vocab,
                    span_extractor=span_extractor,
+                   layer_index=layer_index,
                    num_elmo_layers=num_elmo_layers,
                    initializer=initializer,
                    regularizer=regularizer,
