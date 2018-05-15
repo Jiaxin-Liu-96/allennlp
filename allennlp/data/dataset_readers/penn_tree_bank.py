@@ -39,7 +39,8 @@ def load_language_model_embeddings(embedding_file: str):
     language_model_embeddings = {}
     with h5py.File(embedding_file, 'r') as hdf5_file:
         for key in hdf5_file.keys():
-            language_model_embeddings[key] = hdf5_file[key][...].astype("float32")
+
+            language_model_embeddings[int(key)] = hdf5_file[key][...].astype("float32")
 
     return language_model_embeddings
 

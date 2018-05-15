@@ -125,7 +125,13 @@ class ElmoEmbedder():
         self.indexer = ELMoTokenCharactersIndexer()
 
         logger.info("Initializing ELMo.")
-        self.elmo_bilm = _ElmoBiLm(options_file, weight_file)
+        from calypso.train import load_encoder
+        from calypso.token_embedders import ELMoWrapper
+        if weight_file.endswith(".th"):
+            module = ELMoWrapper(load_encoder(options_file, weight_file, -2), 17)
+            self.elmo_bilm = module
+        else:
+            self.elmo_bilm = _ElmoBiLm(options_file, weight_file)
         if cuda_device >= 0:
             self.elmo_bilm = self.elmo_bilm.cuda(device=cuda_device)
 
@@ -269,6 +275,7 @@ class ElmoEmbedder():
         logger.info("Processing sentences.")
         with h5py.File(output_file_path, 'w') as fout:
             for key, embeddings in Tqdm.tqdm(embedded_sentences):
+                key = str(key)
                 if key in fout.keys():
                     logger.warning(f"Key already exists in {output_file_path}, skipping: {key}")
                 else:

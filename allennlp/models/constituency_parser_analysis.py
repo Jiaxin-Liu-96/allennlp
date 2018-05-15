@@ -483,9 +483,6 @@ class SpanConstituencyParserAnalysis(Model):
         span_extractor = SpanExtractor.from_params(params.pop("span_extractor"))
 
         num_elmo_layers = params.pop_int("num_elmo_layers")
-        elmo_weights = params.pop("elmo_weights")
-        elmo_options = params.pop("elmo_options")
-        elmo_type = params.pop("elmo_type")
         initializer = InitializerApplicator.from_params(params.pop('initializer', []))
         regularizer = RegularizerApplicator.from_params(params.pop('regularizer', []))
         evalb_directory_path = params.pop("evalb_directory_path", None)
@@ -494,9 +491,6 @@ class SpanConstituencyParserAnalysis(Model):
         return cls(vocab=vocab,
                    span_extractor=span_extractor,
                    num_elmo_layers=num_elmo_layers,
-                   elmo_options=elmo_options,
-                   elmo_weights=elmo_weights,
-                   elmo_type=elmo_type,
                    initializer=initializer,
                    regularizer=regularizer,
                    evalb_directory_path=evalb_directory_path)
