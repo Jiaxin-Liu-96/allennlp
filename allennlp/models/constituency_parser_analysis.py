@@ -74,7 +74,7 @@ class SpanConstituencyParserAnalysis(Model):
     def __init__(self,
                  vocab: Vocabulary,
                  span_extractor: SpanExtractor,
-                 layer_index: int, 
+                 layer_index: int,
                  num_elmo_layers: int,
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None,
@@ -97,8 +97,9 @@ class SpanConstituencyParserAnalysis(Model):
 
 
         self.scalar_mix = ScalarMix(num_elmo_layers)
+        labels_to_measure = ["NP", "VP", "S", "SBAR", "PP", "ADVP", "ADJP", "CONJP", "SBARQ", "SQ"]
         id_to_labels = {index: label for index, label in
-                        self.vocab.get_index_to_token_vocabulary("labels").items() if "-" not in label}
+                        self.vocab.get_index_to_token_vocabulary("labels").items() if label in labels_to_measure}
 
         self.label_f1 = {label: F1Measure(index) for index, label
                                    in id_to_labels.items()}
@@ -174,7 +175,7 @@ class SpanConstituencyParserAnalysis(Model):
             elmo_representations = self.scalar_mix(all_elmo_layers)
         else:
             elmo_representations = all_elmo_layers[self._layer_index]
-        
+
         mask = get_text_field_mask(tokens)
         # Looking at the span start index is enough to know if
         # this is padding or not. Shape: (batch_size, num_spans)
