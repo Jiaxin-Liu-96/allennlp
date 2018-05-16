@@ -465,7 +465,7 @@ class SpanConstituencyParserAnalysis(Model):
         span_extractor = SpanExtractor.from_params(params.pop("span_extractor"))
 
         num_elmo_layers = params.pop_int("num_elmo_layers")
-        layer_index = params.pop_int("layer_index")
+        layer_index = params.pop("layer_index")
         initializer = InitializerApplicator.from_params(params.pop('initializer', []))
         regularizer = RegularizerApplicator.from_params(params.pop('regularizer', []))
         evalb_directory_path = params.pop("evalb_directory_path", None)
