@@ -201,7 +201,7 @@ class SpanConstituencyParserAnalysis(Model):
         }
         if span_labels is not None:
             loss = sequence_cross_entropy_with_logits(logits, span_labels, span_mask)
-            self.tag_accuracy(class_probabilities, span_labels, mask)
+            self.tag_accuracy(class_probabilities, span_labels, span_mask)
             output_dict["loss"] = loss
 
         # The evalb score is expensive to compute, so we only compute

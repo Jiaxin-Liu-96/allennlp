@@ -1,6 +1,7 @@
 
 from typing import List
 import os
+import shutil
 import tempfile
 import subprocess
 
@@ -90,7 +91,7 @@ class EvalbBracketingScorer(Metric):
                     self._gold_brackets += numeric_line[6]
                     self._predicted_brackets += numeric_line[7]
 
-        os.rmdir(tempdir)
+        shutil.rmtree(tempdir)
 
     @overrides
     def get_metric(self, reset: bool = False):
