@@ -15,7 +15,7 @@ def write_sentences(output_path, file_path):
         for sentences in ontonotes_reader.dataset_document_iterator(file_path):
             flattened_sentences = [_normalize_word(word)
                                 for sentence in sentences
-                                for word in sentence]
+                                for word in sentence.words]
             tokens = " ".join(flattened_sentences)
             out_file.write(tokens + "\n")
 

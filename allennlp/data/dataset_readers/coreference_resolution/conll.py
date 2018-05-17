@@ -130,7 +130,7 @@ class ConllCorefReader(DatasetReader):
                 total_tokens += len(sentence.words)
 
             canonical_clusters = canonicalize_clusters(clusters)
-            yield self.text_to_instance([s.words for s in sentences], embedding_dict[i] canonical_clusters)
+            yield self.text_to_instance([s.words for s in sentences], embedding_dict[i], canonical_clusters)
 
     @overrides
     def text_to_instance(self,  # type: ignore
