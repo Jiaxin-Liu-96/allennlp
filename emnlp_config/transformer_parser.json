@@ -1,0 +1,73 @@
+{
+    "dataset_reader":{
+        "type":"ptb_trees",
+        "use_pos_tags": false,
+        "token_indexers": {
+          "elmo": {
+            "type": "elmo_characters"
+          }
+        }
+    },
+    "train_data_path": "/net/efs/aristo/allennlp/constituency-parsing/ptb-wsj/wsj.train.notrace.trees",
+    "validation_data_path": "/net/efs/aristo/allennlp/constituency-parsing/ptb-wsj/wsj.dev.notrace.trees",
+    "test_data_path": "/net/efs/aristo/allennlp/constituency-parsing/ptb-wsj/wsj.test.notrace.trees",
+    "model": {
+      "type": "constituency_parser",
+      "text_field_embedder": {
+        "elmo": {
+          "type": "transformer_token_embedder",
+          "dropout": 0.1,
+          "weight_file": "/net/efs/aristo/allennlp/elmo_models/calypso_transformer_6_512_restart_10models/model_state_epoch_1.2018-04-13-22-28-11.th",
+          "options_file": "/net/efs/aristo/allennlp/elmo_models/calypso_transformer_6_512_restart_10models/options.json"
+        }
+      },
+      "initializer": [
+        ["tag_projection_layer.*weight", {"type": "xavier_normal"}],
+        ["feedforward_layer.*weight", {"type": "xavier_normal"}]
+      ],
+      "encoder": {
+        "type": "stacked_bidirectional_lstm",
+        "input_size": 1024,
+        "hidden_size": 250,
+        "num_layers": 2,
+        "recurrent_dropout_probability": 0.2
+      },
+      "feedforward": {
+        "input_dim": 500,
+        "num_layers": 1,
+        "hidden_dims": 250,
+        "activations": "relu",
+        "dropout": 0.1
+      },
+      "span_extractor": {
+        "type": "bidirectional_endpoint",
+        "input_dim": 500
+      },
+      "evalb_directory_path": "scripts/EVALB"
+    },
+    "iterator": {
+      "type": "bucket",
+      "sorting_keys": [["tokens", "num_tokens"]],
+      "batch_size" : 64
+    },
+    "trainer": {
+      "learning_rate_scheduler": {
+        "type": "multi_step",
+        "milestones": [40, 50, 60, 70, 80],
+        "gamma": 0.8
+      },
+      "num_epochs": 150,
+      "grad_norm": 5.0,
+      "patience": 20,
+      "num_serialized_models_to_keep": 10,
+      "validation_metric": "+evalb_f1_measure",
+      "cuda_device": 0,
+      "optimizer": {
+        "type": "adadelta",
+        "lr": 1.0,
+        "rho": 0.95
+      }
+    },
+    "evaluate_on_test": true
+  }
+

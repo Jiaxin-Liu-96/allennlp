@@ -1,0 +1,46 @@
+{
+    "dataset_reader":{
+        "type":"ptb_trees",
+        "use_pos_tags": false,
+        "token_indexers": {
+          "elmo": {
+            "type": "elmo_characters"
+          }
+        }
+    },
+    "train_data_path": "/net/efs/aristo/allennlp/constituency-parsing/transformer-ptb-wsj/wsj.train.notrace.trees",
+    "validation_data_path": "/net/efs/aristo/allennlp/constituency-parsing/transformer-ptb-wsj/wsj.dev.notrace.trees",
+    "test_data_path": "/net/efs/aristo/allennlp/constituency-parsing/transformer-ptb-wsj/wsj.test.notrace.trees",
+    "model": {
+      "type": "constituency_parser_analysis",
+      "num_elmo_layers": 7,
+      "layer_index": "mixed",
+      "span_extractor": {
+        "type": "super_charged",
+        "input_dim": 1024
+      },
+      "evalb_directory_path": "scripts/EVALB",
+      "regularizer": [[".*tag_projection_layer.*weight", {"type": "l2", "alpha": 0.000001}]]
+    },
+    "iterator": {
+      "type": "bucket",
+      "sorting_keys": [["tokens", "num_tokens"]],
+      "batch_size" : 1
+    },
+    "trainer": {
+      "learning_rate_scheduler": {
+        "type": "exponential",
+        "gamma": 0.9
+      },
+      "num_epochs": 15,
+      "patience": 10,
+      "validation_metric": "+evalb_f1_measure",
+      "cuda_device": 0,
+      "optimizer": {
+        "type": "sgd",
+        "lr": 0.01
+      }
+    },
+      "evaluate_on_test": true
+  }
+
