@@ -2,12 +2,8 @@
   "dataset_reader": {
     "type": "coref",
     "token_indexers": {
-      "tokens": {
-        "type": "single_id",
-        "lowercase_tokens": false
-      },
-      "token_characters": {
-        "type": "characters"
+      "elmo": {
+        "type": "elmo_characters"
       }
     },
     "max_span_width": 10
@@ -18,47 +14,13 @@
   "model": {
     "type": "coref",
     "text_field_embedder": {
-      "tokens": {
-        "type": "embedding",
-        "pretrained_file": "https://s3-us-west-2.amazonaws.com/allennlp/datasets/glove/glove.6B.300d.txt.gz",
-        "embedding_dim": 300,
-        "trainable": false
-      },
-      "token_characters": {
-        "type": "character_encoding",
-        "embedding": {
-          "num_embeddings": 262,
-          "embedding_dim": 16
-        },
-        "encoder": {
-          "type": "cnn",
-          "embedding_dim": 16,
-          "num_filters": 100,
-          "ngram_filter_sizes": [5]
-        }
+      "elmo": {
+        "type": "elmo_token_embedder",
+        "dropout": 0.2,
+        "options_file": "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_options.json",
+        "weight_file": "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5",
+        "do_layer_norm": false
       }
-    },
-    "context_layer": {
-        "type": "lstm",
-        "bidirectional": true,
-        "input_size": 400,
-        "hidden_size": 200,
-        "num_layers": 1,
-        "dropout": 0.2
-    },
-    "mention_feedforward": {
-        "input_dim": 1220,
-        "num_layers": 2,
-        "hidden_dims": 150,
-        "activations": "relu",
-        "dropout": 0.2
-    },
-    "antecedent_feedforward": {
-        "input_dim": 3680,
-        "num_layers": 2,
-        "hidden_dims": 150,
-        "activations": "relu",
-        "dropout": 0.2
     },
     "initializer": [
         [".*linear_layers.*weight", {"type": "xavier_normal"}],

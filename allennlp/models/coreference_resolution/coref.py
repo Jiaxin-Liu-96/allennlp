@@ -11,8 +11,7 @@ from allennlp.common import Params
 from allennlp.data import Vocabulary
 from allennlp.models.model import Model
 from allennlp.modules.token_embedders import Embedding
-from allennlp.modules import FeedForward
-from allennlp.modules import Seq2SeqEncoder, TimeDistributed, TextFieldEmbedder, SpanPruner
+from allennlp.modules import TimeDistributed, TextFieldEmbedder, SpanPruner
 from allennlp.modules.span_extractors import SelfAttentiveSpanExtractor, EndpointSpanExtractor
 from allennlp.nn import util, InitializerApplicator, RegularizerApplicator
 from allennlp.training.metrics import MentionRecall, ConllCorefScores
@@ -65,9 +64,6 @@ class CoreferenceResolver(Model):
     def __init__(self,
                  vocab: Vocabulary,
                  text_field_embedder: TextFieldEmbedder,
-                 context_layer: Seq2SeqEncoder,
-                 mention_feedforward: FeedForward,
-                 antecedent_feedforward: FeedForward,
                  feature_size: int,
                  max_span_width: int,
                  spans_per_word: float,
@@ -78,15 +74,12 @@ class CoreferenceResolver(Model):
         super(CoreferenceResolver, self).__init__(vocab, regularizer)
 
         self._text_field_embedder = text_field_embedder
-        self._context_layer = context_layer
-        self._antecedent_feedforward = TimeDistributed(antecedent_feedforward)
-        feedforward_scorer = torch.nn.Sequential(
-                TimeDistributed(mention_feedforward),
-                TimeDistributed(torch.nn.Linear(mention_feedforward.get_output_dim(), 1)))
+        span_dim = 3 * text_field_embedder.get_output_dim() + feature_size
+        feedforward_scorer = TimeDistributed(torch.nn.Linear(span_dim, 1))
         self._mention_pruner = SpanPruner(feedforward_scorer)
-        self._antecedent_scorer = TimeDistributed(torch.nn.Linear(antecedent_feedforward.get_output_dim(), 1))
+        self._antecedent_scorer = TimeDistributed(torch.nn.Linear(3 * span_dim + feature_size, 1))
 
-        self._endpoint_span_extractor = EndpointSpanExtractor(context_layer.get_output_dim(),
+        self._endpoint_span_extractor = EndpointSpanExtractor(text_field_embedder.get_output_dim(),
                                                               combination="x,y",
                                                               num_width_embeddings=max_span_width,
                                                               span_width_embedding_dim=feature_size,
@@ -167,10 +160,8 @@ class CoreferenceResolver(Model):
         # Shape: (batch_size, num_spans, 2)
         spans = F.relu(spans.float()).long()
 
-        # Shape: (batch_size, document_length, encoding_dim)
-        contextualized_embeddings = self._context_layer(text_embeddings, text_mask)
         # Shape: (batch_size, num_spans, 2 * encoding_dim + feature_size)
-        endpoint_span_embeddings = self._endpoint_span_extractor(contextualized_embeddings, spans)
+        endpoint_span_embeddings = self._endpoint_span_extractor(text_embeddings, spans)
         # Shape: (batch_size, num_spans, emebedding_size)
         attended_span_embeddings = self._attentive_span_extractor(text_embeddings, spans)
 
@@ -569,8 +560,7 @@ class CoreferenceResolver(Model):
 
         """
         # Shape: (batch_size, num_spans_to_keep, max_antecedents)
-        antecedent_scores = self._antecedent_scorer(
-                self._antecedent_feedforward(pairwise_embeddings)).squeeze(-1)
+        antecedent_scores = self._antecedent_scorer(pairwise_embeddings).squeeze(-1)
         antecedent_scores += top_span_mention_scores + antecedent_mention_scores
         antecedent_scores += antecedent_log_mask
 
@@ -586,9 +576,6 @@ class CoreferenceResolver(Model):
     def from_params(cls, vocab: Vocabulary, params: Params) -> "CoreferenceResolver":
         embedder_params = params.pop("text_field_embedder")
         text_field_embedder = TextFieldEmbedder.from_params(vocab, embedder_params)
-        context_layer = Seq2SeqEncoder.from_params(params.pop("context_layer"))
-        mention_feedforward = FeedForward.from_params(params.pop("mention_feedforward"))
-        antecedent_feedforward = FeedForward.from_params(params.pop("antecedent_feedforward"))
 
         feature_size = params.pop_int("feature_size")
         max_span_width = params.pop_int("max_span_width")
@@ -606,9 +593,6 @@ class CoreferenceResolver(Model):
         params.assert_empty(cls.__name__)
         return cls(vocab=vocab,
                    text_field_embedder=text_field_embedder,
-                   context_layer=context_layer,
-                   mention_feedforward=mention_feedforward,
-                   antecedent_feedforward=antecedent_feedforward,
                    feature_size=feature_size,
                    max_span_width=max_span_width,
                    spans_per_word=spans_per_word,
