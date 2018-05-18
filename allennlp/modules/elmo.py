@@ -73,6 +73,7 @@ class Elmo(torch.nn.Module):
                  requires_grad: bool = False,
                  do_layer_norm: bool = False,
                  dropout: float = 0.5,
+                 layer_to_keep=None,
                  module: torch.nn.Module = None) -> None:
         super(Elmo, self).__init__()
 
@@ -85,11 +86,15 @@ class Elmo(torch.nn.Module):
         else:
             self._elmo_lstm = _ElmoBiLm(options_file, weight_file, requires_grad=requires_grad)
         self._dropout = Dropout(p=dropout)
-        self._scalar_mixes: Any = []
-        for k in range(num_output_representations):
-            scalar_mix = ScalarMix(self._elmo_lstm.num_layers, do_layer_norm=do_layer_norm)
-            self.add_module('scalar_mix_{}'.format(k), scalar_mix)
-            self._scalar_mixes.append(scalar_mix)
+
+        if layer_to_keep is None:
+            self._scalar_mixes: Any = []
+            for k in range(num_output_representations):
+                scalar_mix = ScalarMix(self._elmo_lstm.num_layers, do_layer_norm=do_layer_norm)
+                self.add_module('scalar_mix_{}'.format(k), scalar_mix)
+                self._scalar_mixes.append(scalar_mix)
+
+        self.layer_to_keep = layer_to_keep
 
     def get_output_dim(self):
         return self._elmo_lstm.get_output_dim()
@@ -128,9 +133,16 @@ class Elmo(torch.nn.Module):
 
         # compute the elmo representations
         representations = []
-        for i in range(len(self._scalar_mixes)):
-            scalar_mix = getattr(self, 'scalar_mix_{}'.format(i))
-            representation_with_bos_eos = scalar_mix(layer_activations, mask_with_bos_eos)
+        if self.layer_to_keep is None:
+            for i in range(len(self._scalar_mixes)):
+                scalar_mix = getattr(self, 'scalar_mix_{}'.format(i))
+                representation_with_bos_eos = scalar_mix(layer_activations, mask_with_bos_eos)
+                representation_without_bos_eos, mask_without_bos_eos = remove_sentence_boundaries(
+                    representation_with_bos_eos, mask_with_bos_eos
+            )
+                representations.append(self._dropout(representation_without_bos_eos))
+        else:
+            representation_with_bos_eos = layer_activations[self.layer_to_keep]
             representation_without_bos_eos, mask_without_bos_eos = remove_sentence_boundaries(
                     representation_with_bos_eos, mask_with_bos_eos
             )
@@ -501,7 +513,7 @@ class _ElmoBiLm(torch.nn.Module):
 
         # Prepare the output.  The first layer is duplicated.
         output_tensors = [
-                torch.cat([type_representation, type_representation], dim=-1)
+                    torch.cat([type_representation, type_representation], dim=-1)
         ]
         for layer_activations in torch.chunk(lstm_outputs, lstm_outputs.size(0), dim=0):
             output_tensors.append(layer_activations.squeeze(0))
