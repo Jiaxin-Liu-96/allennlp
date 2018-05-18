@@ -69,15 +69,21 @@ class CoreferenceResolver(Model):
                  spans_per_word: float,
                  max_antecedents: int,
                  lexical_dropout: float = 0.2,
+                 projection_dim: int = 200,
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None) -> None:
         super(CoreferenceResolver, self).__init__(vocab, regularizer)
 
         self._text_field_embedder = text_field_embedder
         span_dim = 3 * text_field_embedder.get_output_dim() + feature_size
-        feedforward_scorer = TimeDistributed(torch.nn.Linear(span_dim, 1))
+
+        self._span_projector = TimeDistributed(torch.nn.Linear(span_dim, projection_dim))
+
+        #feedforward_scorer = TimeDistributed(torch.nn.Linear(span_dim, 1))
+        feedforward_scorer = TimeDistributed(torch.nn.Linear(projection_dim, 1))
         self._mention_pruner = SpanPruner(feedforward_scorer)
-        self._antecedent_scorer = TimeDistributed(torch.nn.Linear(3 * span_dim + feature_size, 1))
+        #self._antecedent_scorer = TimeDistributed(torch.nn.Linear(3 * span_dim + feature_size, 1))
+        self._antecedent_scorer = TimeDistributed(torch.nn.Linear(3 * projection_dim + feature_size, 1))
 
         self._endpoint_span_extractor = EndpointSpanExtractor(text_field_embedder.get_output_dim(),
                                                               combination="x,y",
@@ -167,6 +173,7 @@ class CoreferenceResolver(Model):
 
         # Shape: (batch_size, num_spans, emebedding_size + 2 * encoding_dim + feature_size)
         span_embeddings = torch.cat([endpoint_span_embeddings, attended_span_embeddings], -1)
+        span_embeddings = self._span_projector(span_embeddings)
 
         # Prune based on mention scores.
         num_spans_to_keep = int(math.floor(self._spans_per_word * document_length))

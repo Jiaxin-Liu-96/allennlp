@@ -3,8 +3,6 @@ import collections
 from typing import Any, Dict, List, Optional, Tuple, DefaultDict, Set
 
 from overrides import overrides
-import h5py
-import os
 
 from allennlp.common import Params
 from allennlp.common.file_utils import cached_path
@@ -16,27 +14,6 @@ from allennlp.data.token_indexers import SingleIdTokenIndexer, TokenIndexer
 from allennlp.data.dataset_readers.dataset_utils import Ontonotes, enumerate_spans
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-
-def load_language_model_embeddings(embedding_file: str):
-    """
-    Load the language model embeddings from the file. The file is keyed by sentence_id.
-    Each sentence contains one h5py dataset of shape (3, n_tokens, 1024),
-    with the embeddings for each of the three layers in the language model.
-    Parameters
-    ----------
-    embedding_file : str, required.
-        The path to the hdf5 file containing a sentence_id -> numpy.float32 array.
-    Returns
-    -------
-    A dictionary mapping sentence_ids -> tensors of shape (3, len(sentence), 1024).
-    """
-    language_model_embeddings = {}
-    with h5py.File(embedding_file, 'r') as hdf5_file:
-        for key in hdf5_file.keys():
-
-            language_model_embeddings[int(key)] = hdf5_file[key][...].astype("float32")
-
-    return language_model_embeddings
 
 
 def canonicalize_clusters(clusters: DefaultDict[int, List[Tuple[int, int]]]) -> List[List[Tuple[int, int]]]:
@@ -108,14 +85,8 @@ class ConllCorefReader(DatasetReader):
         # if `file_path` is a URL, redirect to the cache
         file_path = cached_path(file_path)
 
-        directory, filename = os.path.split(file_path)
-
-        embedding_path = filename + ".embeddings.hdf5"
-        embedding_dict = load_language_model_embeddings(os.path.join(directory, embedding_path))
-
         ontonotes_reader = Ontonotes()
-
-        for i, sentences in enumerate(ontonotes_reader.dataset_document_iterator(file_path)):
+        for sentences in ontonotes_reader.dataset_document_iterator(file_path):
             clusters: DefaultDict[int, List[Tuple[int, int]]] = collections.defaultdict(list)
 
             total_tokens = 0
@@ -130,12 +101,11 @@ class ConllCorefReader(DatasetReader):
                 total_tokens += len(sentence.words)
 
             canonical_clusters = canonicalize_clusters(clusters)
-            yield self.text_to_instance([s.words for s in sentences], embedding_dict[i], canonical_clusters)
+            yield self.text_to_instance([s.words for s in sentences], canonical_clusters)
 
     @overrides
     def text_to_instance(self,  # type: ignore
                          sentences: List[List[str]],
-                         lm_embedding,
                          gold_clusters: Optional[List[List[Tuple[int, int]]]] = None) -> Instance:
         # pylint: disable=arguments-differ
         """
@@ -203,8 +173,6 @@ class ConllCorefReader(DatasetReader):
                                     "metadata": metadata_field}
         if span_labels is not None:
             fields["span_labels"] = SequenceLabelField(span_labels, span_field)
-
-        fields["lm_embeddings"] = ArrayField(lm_embedding)
 
         return Instance(fields)
 
