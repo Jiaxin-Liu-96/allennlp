@@ -121,38 +121,38 @@ class PennTreeBankConstituencySpanDatasetReader(DatasetReader):
         elif self._use_pos_tags:
             raise ConfigurationError("use_pos_tags was set to True but no gold pos"
                                      " tags were passed to the dataset reader.")
-        spans: List[Field] = []
-        gold_labels = []
-
-        if gold_tree is not None:
-            gold_spans: Dict[Tuple[int, int], str] = {}
-            self._get_gold_spans(gold_tree, 0, gold_spans)
-
-        else:
-            gold_spans = None
-        for start, end in enumerate_spans(tokens):
-            spans.append(SpanField(start, end, text_field))
-
-            if gold_spans is not None:
-                if (start, end) in gold_spans.keys():
-                    gold_labels.append(gold_spans[(start, end)])
-                else:
-                    gold_labels.append("NO-LABEL")
-
-        metadata = {"tokens": tokens}
-        if gold_tree:
-            metadata["gold_tree"] = gold_tree
-        if self._use_pos_tags:
-            metadata["pos_tags"] = pos_tags
-
-        fields["metadata"] = MetadataField(metadata)
-
-        span_list_field: ListField = ListField(spans)
-        fields["spans"] = span_list_field
-        if gold_tree is not None:
-            fields["span_labels"] = SequenceLabelField(gold_labels,
-                                                       span_list_field,
-                                                       label_namespace=self._label_namespace_prefix + "labels")
+#        spans: List[Field] = []
+#        gold_labels = []
+#
+#        if gold_tree is not None:
+#            gold_spans: Dict[Tuple[int, int], str] = {}
+#            self._get_gold_spans(gold_tree, 0, gold_spans)
+#
+#        else:
+#            gold_spans = None
+#        for start, end in enumerate_spans(tokens):
+#            spans.append(SpanField(start, end, text_field))
+#
+#            if gold_spans is not None:
+#                if (start, end) in gold_spans.keys():
+#                    gold_labels.append(gold_spans[(start, end)])
+#                else:
+#                    gold_labels.append("NO-LABEL")
+#
+#        metadata = {"tokens": tokens}
+#        if gold_tree:
+#            metadata["gold_tree"] = gold_tree
+#        if self._use_pos_tags:
+#            metadata["pos_tags"] = pos_tags
+#
+#        fields["metadata"] = MetadataField(metadata)
+#
+#        span_list_field: ListField = ListField(spans)
+#        fields["spans"] = span_list_field
+#        if gold_tree is not None:
+#            fields["span_labels"] = SequenceLabelField(gold_labels,
+#                                                       span_list_field,
+#                                                       label_namespace=self._label_namespace_prefix + "labels")
         return Instance(fields)
 
     def _strip_functional_tags(self, tree: Tree) -> None:
