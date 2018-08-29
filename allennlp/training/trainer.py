@@ -1032,7 +1032,7 @@ class Trainer:
                     "Error: A base learning rate is required for " \
                     "discriminative fine-tuning."
                 lr = optimizer_params["lr"]
-                decay_factor = 0.38
+                decay_factor = optimizer_params.pop_float("decay_factor", 0.38)
                 # use the caret to match module only at the start
                 groups = [[[f"^{m}" for m in module], {"lr": lr*decay_factor**i}] for i, module in enumerate(reversed(modules))]
             else:
