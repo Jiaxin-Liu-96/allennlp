@@ -98,7 +98,8 @@ class TestDenseSparseAdam(AllenNlpTestCase):
 
     def test_can_optimise_model_with_dense_and_sparse_params(self):
         optimizer_params = Params({
-                "type": "dense_sparse_adam"
+                "type": "dense_sparse_adam",
+                "adamw_decay": 0.1,
         })
         parameters = [[n, p] for n, p in self.model.named_parameters() if p.requires_grad]
         optimizer = Optimizer.from_params(parameters, optimizer_params)

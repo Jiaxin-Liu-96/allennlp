@@ -160,7 +160,7 @@ class DenseSparseAdam(torch.optim.Optimizer):
     eps : ``float``, optional, (default: 1e-8)
         A term added to the denominator to improve numerical stability.
     """
-    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8):
+    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, adamw_decay=0):
         if not 0.0 <= lr:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if not 0.0 <= eps:
@@ -169,7 +169,9 @@ class DenseSparseAdam(torch.optim.Optimizer):
             raise ValueError("Invalid beta parameter at index 0: {}".format(betas[0]))
         if not 0.0 <= betas[1] < 1.0:
             raise ValueError("Invalid beta parameter at index 1: {}".format(betas[1]))
-        defaults = dict(lr=lr, betas=betas, eps=eps)
+        if adamw_decay <= 0:
+            raise ValueError("Invalid parameter for adamw_decay: {}".format(adamw_decay))
+        defaults = dict(lr=lr, betas=betas, eps=eps, adamw_decay=adamw_decay)
         super(DenseSparseAdam, self).__init__(params, defaults)
 
     def step(self, closure=None):
@@ -237,7 +239,6 @@ class DenseSparseAdam(torch.optim.Optimizer):
                     bias_correction1 = 1 - beta1 ** state['step']
                     bias_correction2 = 1 - beta2 ** state['step']
                     step_size = group['lr'] * math.sqrt(bias_correction2) / bias_correction1
-
                     p.data.add_(make_sparse(-step_size * numer.div_(denom)))
 
                 else:
@@ -249,6 +250,10 @@ class DenseSparseAdam(torch.optim.Optimizer):
                     bias_correction1 = 1 - beta1 ** state['step']
                     bias_correction2 = 1 - beta2 ** state['step']
                     step_size = group['lr'] * math.sqrt(bias_correction2) / bias_correction1
+
+                    if group['adamw_decay'] > 0:
+                        decay = group['lr'] * group['adamw_decay'] * p.data
+                        p.data.sub_(decay)
 
                     p.data.addcdiv_(-step_size, exp_avg, denom)
 
