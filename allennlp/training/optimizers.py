@@ -169,7 +169,7 @@ class DenseSparseAdam(torch.optim.Optimizer):
             raise ValueError("Invalid beta parameter at index 0: {}".format(betas[0]))
         if not 0.0 <= betas[1] < 1.0:
             raise ValueError("Invalid beta parameter at index 1: {}".format(betas[1]))
-        if adamw_decay <= 0:
+        if adamw_decay < 0:
             raise ValueError("Invalid parameter for adamw_decay: {}".format(adamw_decay))
         defaults = dict(lr=lr, betas=betas, eps=eps, adamw_decay=adamw_decay)
         super(DenseSparseAdam, self).__init__(params, defaults)
