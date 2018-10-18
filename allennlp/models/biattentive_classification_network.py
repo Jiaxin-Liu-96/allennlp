@@ -314,7 +314,11 @@ class BiattentiveClassificationNetwork(Model):
         embedder_params = params.pop("text_field_embedder")
         text_field_embedder = TextFieldEmbedder.from_params(vocab=vocab, params=embedder_params)
         embedding_dropout = params.pop("embedding_dropout")
-        pre_encode_feedforward = FeedForward.from_params(params.pop("pre_encode_feedforward"), None)
+        ff_params = params.pop("pre_encode_feedforward", None)
+        if ff_params is not None:
+            pre_encode_feedforward = FeedForward.from_params(ff_params)
+        else:
+            pre_encode_feedforward = None
         encoder = Seq2SeqEncoder.from_params(params.pop("encoder"))
         integrator = Seq2SeqEncoder.from_params(params.pop("integrator"))
         integrator_dropout = params.pop("integrator_dropout")
