@@ -34,10 +34,12 @@ class SnliReader(DatasetReader):
     def __init__(self,
                  tokenizer: Tokenizer = None,
                  token_indexers: Dict[str, TokenIndexer] = None,
+                 label_str: str = "gold_label",
                  lazy: bool = False) -> None:
         super().__init__(lazy)
         self._tokenizer = tokenizer or WordTokenizer()
         self._token_indexers = token_indexers or {'tokens': SingleIdTokenIndexer()}
+        self._label_str = label_str
 
     @overrides
     def _read(self, file_path: str):
@@ -49,7 +51,7 @@ class SnliReader(DatasetReader):
             for line in snli_file:
                 example = json.loads(line)
 
-                label = example["gold_label"]
+                label = example[self._label_str]
                 if label == '-':
                     # These were cases where the annotators disagreed; we'll just skip them.  It's
                     # like 800 out of 500k examples in the training data.
