@@ -74,7 +74,6 @@ class BiattentiveClassificationNetwork(Model):
                  vocab: Vocabulary,
                  text_field_embedder: TextFieldEmbedder,
                  embedding_dropout: float,
-                 pre_encode_feedforward: FeedForward,
                  encoder: Seq2SeqEncoder,
                  integrator: Seq2SeqEncoder,
                  integrator_dropout: float,
@@ -82,6 +81,7 @@ class BiattentiveClassificationNetwork(Model):
                  elmo: Elmo,
                  use_input_elmo: bool = False,
                  use_integrator_output_elmo: bool = False,
+                 pre_encode_feedforward: FeedForward = None,
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None) -> None:
         super(BiattentiveClassificationNetwork, self).__init__(vocab, regularizer)
@@ -137,22 +137,22 @@ class BiattentiveClassificationNetwork(Model):
                 self._combined_integrator_output_dim, 1)
         self._output_layer = output_layer
 
-        if self._use_input_elmo:
-            check_dimensions_match(text_field_embedder.get_output_dim() +
-                                   self._elmo.get_output_dim(),
-                                   self._pre_encode_feedforward.get_input_dim(),
-                                   "text field embedder output dim + ELMo output dim",
-                                   "Pre-encoder feedforward input dim")
-        else:
-            check_dimensions_match(text_field_embedder.get_output_dim(),
-                                   self._pre_encode_feedforward.get_input_dim(),
-                                   "text field embedder output dim",
-                                   "Pre-encoder feedforward input dim")
+        #if self._use_input_elmo:
+        #    check_dimensions_match(text_field_embedder.get_output_dim() +
+        #                           self._elmo.get_output_dim(),
+        #                           self._pre_encode_feedforward.get_input_dim(),
+        #                           "text field embedder output dim + ELMo output dim",
+        #                           "Pre-encoder feedforward input dim")
+        #else:
+        #    check_dimensions_match(text_field_embedder.get_output_dim(),
+        #                           self._pre_encode_feedforward.get_input_dim(),
+        #                           "text field embedder output dim",
+        #                           "Pre-encoder feedforward input dim")
 
-        check_dimensions_match(self._pre_encode_feedforward.get_output_dim(),
-                               self._encoder.get_input_dim(),
-                               "Pre-encoder feedforward output dim",
-                               "Encoder input dim")
+        #check_dimensions_match(self._pre_encode_feedforward.get_output_dim(),
+        #                       self._encoder.get_input_dim(),
+        #                       "Pre-encoder feedforward output dim",
+        #                       "Encoder input dim")
         check_dimensions_match(self._encoder.get_output_dim() * 3,
                                self._integrator.get_input_dim(),
                                "Encoder output dim * 3",
@@ -236,7 +236,10 @@ class BiattentiveClassificationNetwork(Model):
                 embedded_text = input_elmo
 
         dropped_embedded_text = self._embedding_dropout(embedded_text)
-        pre_encoded_text = self._pre_encode_feedforward(dropped_embedded_text)
+        if self._pre_encode_feedforward is not None:
+            pre_encoded_text = self._pre_encode_feedforward(dropped_embedded_text)
+        else:
+            pre_encoded_text = dropped_embedded_text
         encoded_tokens = self._encoder(pre_encoded_text, text_mask)
 
         # Compute biattention. This is a special case since the inputs are the same.
@@ -311,7 +314,7 @@ class BiattentiveClassificationNetwork(Model):
         embedder_params = params.pop("text_field_embedder")
         text_field_embedder = TextFieldEmbedder.from_params(vocab=vocab, params=embedder_params)
         embedding_dropout = params.pop("embedding_dropout")
-        pre_encode_feedforward = FeedForward.from_params(params.pop("pre_encode_feedforward"))
+        pre_encode_feedforward = FeedForward.from_params(params.pop("pre_encode_feedforward"), None)
         encoder = Seq2SeqEncoder.from_params(params.pop("encoder"))
         integrator = Seq2SeqEncoder.from_params(params.pop("integrator"))
         integrator_dropout = params.pop("integrator_dropout")
@@ -335,7 +338,6 @@ class BiattentiveClassificationNetwork(Model):
         return cls(vocab=vocab,
                    text_field_embedder=text_field_embedder,
                    embedding_dropout=embedding_dropout,
-                   pre_encode_feedforward=pre_encode_feedforward,
                    encoder=encoder,
                    integrator=integrator,
                    integrator_dropout=integrator_dropout,
@@ -343,5 +345,6 @@ class BiattentiveClassificationNetwork(Model):
                    elmo=elmo,
                    use_input_elmo=use_input_elmo,
                    use_integrator_output_elmo=use_integrator_output_elmo,
+                   pre_encode_feedforward=pre_encode_feedforward,
                    initializer=initializer,
                    regularizer=regularizer)
