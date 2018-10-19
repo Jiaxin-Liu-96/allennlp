@@ -36,12 +36,16 @@ class SnliReader(DatasetReader):
                  token_indexers: Dict[str, TokenIndexer] = None,
                  label_str: str = "gold_label",
                  label_type: str = "str",
+                 max_length: bool = None,
                  lazy: bool = False) -> None:
         super().__init__(lazy)
         self._tokenizer = tokenizer or WordTokenizer()
         self._token_indexers = token_indexers or {'tokens': SingleIdTokenIndexer()}
         self._label_str = label_str
         self._label_type = label_type
+        if max_length is None:
+            max_length = int(1e9)
+        self._max_length = max_length
         assert label_type in ['str']
 
     @overrides
@@ -74,8 +78,8 @@ class SnliReader(DatasetReader):
                          label: str = None) -> Instance:
         # pylint: disable=arguments-differ
         fields: Dict[str, Field] = {}
-        premise_tokens = self._tokenizer.tokenize(premise)
-        hypothesis_tokens = self._tokenizer.tokenize(hypothesis)
+        premise_tokens = self._tokenizer.tokenize(premise)[:self._max_length]
+        hypothesis_tokens = self._tokenizer.tokenize(hypothesis)[:self._max_length]
         fields['premise'] = TextField(premise_tokens, self._token_indexers)
         fields['hypothesis'] = TextField(hypothesis_tokens, self._token_indexers)
         if label:
