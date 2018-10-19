@@ -36,7 +36,7 @@ class SnliReader(DatasetReader):
                  token_indexers: Dict[str, TokenIndexer] = None,
                  label_str: str = "gold_label",
                  label_type: str = "str",
-                 max_length: bool = None,
+                 max_length: int = None,
                  lazy: bool = False) -> None:
         super().__init__(lazy)
         self._tokenizer = tokenizer or WordTokenizer()
