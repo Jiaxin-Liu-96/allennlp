@@ -6,10 +6,12 @@ from overrides import overrides
 
 from allennlp.common.file_utils import cached_path
 from allennlp.data.dataset_readers.dataset_reader import DatasetReader
-from allennlp.data.fields import Field, TextField, LabelField, MetadataField
+from allennlp.data.fields import Field, TextField, LabelField, MetadataField, ArrayField
 from allennlp.data.instance import Instance
 from allennlp.data.token_indexers import SingleIdTokenIndexer, TokenIndexer
 from allennlp.data.tokenizers import Tokenizer, WordTokenizer
+
+import numpy
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -46,7 +48,7 @@ class SnliReader(DatasetReader):
         if max_length is None:
             max_length = int(1e9)
         self._max_length = max_length
-        assert label_type in ['str']
+        assert label_type in ['str', 'float']
 
     @overrides
     def _read(self, file_path: str):
@@ -65,6 +67,8 @@ class SnliReader(DatasetReader):
                     continue
                 if self._label_type == 'str':
                     label = str(label)
+                elif self._label_type == 'float':
+                    label = float(label)
 
                 premise = example["sentence1"]
                 hypothesis = example["sentence2"]
@@ -83,7 +87,10 @@ class SnliReader(DatasetReader):
         fields['premise'] = TextField(premise_tokens, self._token_indexers)
         fields['hypothesis'] = TextField(hypothesis_tokens, self._token_indexers)
         if label:
-            fields['label'] = LabelField(label)
+            if self._label_type == 'str':
+                fields['label'] = LabelField(label)
+            elif self._label_type == 'float':
+                field['label'] = ArrayField(numpy.array(label))
 
         metadata = {"premise_tokens": [x.text for x in premise_tokens],
                     "hypothesis_tokens": [x.text for x in hypothesis_tokens]}
