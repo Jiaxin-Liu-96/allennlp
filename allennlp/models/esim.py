@@ -89,7 +89,9 @@ class ESIM(Model):
 
         self._accuracy = CategoricalAccuracy()
         if compute_f1:
-            self._f1 = F1Measure(1)
+            # DANGER :make sure 1 is the first label in the dataset
+            # so it has index 0...
+            self._f1 = F1Measure(0)
         self._compute_f1 = compute_f1
 
         self._loss = torch.nn.CrossEntropyLoss()
