@@ -89,7 +89,7 @@ class ESIM(Model):
 
         self._accuracy = CategoricalAccuracy()
         if compute_f1:
-            self._f1 = F1Measure()
+            self._f1 = F1Measure(1)
         self._compute_f1 = compute_f1
 
         self._loss = torch.nn.CrossEntropyLoss()
@@ -224,6 +224,6 @@ class ESIM(Model):
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
         metrics = {'accuracy': self._accuracy.get_metric(reset)}
         if self._compute_f1:
-            metrics['f1'] = self._f1.get_metric(reset)
+            metrics['f1'] = self._f1.get_metric(reset)[2]
             metrics['accuracy_and_f1'] = 0.5 * (metrics['accuracy'] + metrics['f1'])
         return metrics
