@@ -10,7 +10,7 @@ from allennlp.modules.matrix_attention.legacy_matrix_attention import LegacyMatr
 from allennlp.modules import Seq2SeqEncoder, SimilarityFunction, TextFieldEmbedder
 from allennlp.nn import InitializerApplicator, RegularizerApplicator
 from allennlp.nn.util import get_text_field_mask, masked_softmax, weighted_sum, replace_masked_values
-from allennlp.training.metrics import CategoricalAccuracy
+from allennlp.training.metrics import CategoricalAccuracy, F1Measure
 
 
 @Model.register("esim")
@@ -55,6 +55,7 @@ class ESIM(Model):
                  output_feedforward: FeedForward,
                  output_logit: FeedForward,
                  dropout: float = 0.5,
+                 compute_f1: bool = False,
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None) -> None:
         super().__init__(vocab, regularizer)
@@ -87,6 +88,10 @@ class ESIM(Model):
                                "proj feedforward output dim", "inference lstm input dim")
 
         self._accuracy = CategoricalAccuracy()
+        if compute_f1:
+            self._f1 = F1Measure()
+        self._compute_f1 = compute_f1
+
         self._loss = torch.nn.CrossEntropyLoss()
 
         initializer(self)
@@ -210,9 +215,15 @@ class ESIM(Model):
         if label is not None:
             loss = self._loss(label_logits, label.long().view(-1))
             self._accuracy(label_logits, label)
+            if self._compute_f1:
+                self._f1(label_logits, label)
             output_dict["loss"] = loss
 
         return output_dict
 
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
-        return {'accuracy': self._accuracy.get_metric(reset)}
+        metrics = {'accuracy': self._accuracy.get_metric(reset)}
+        if self._compute_f1:
+            metrics['f1'] = self._f1.get_metric(reset)
+            metrics['accuracy_and_f1'] = 0.5 * (metrics['accuracy'] + metrics['f1'])
+        return metrics
