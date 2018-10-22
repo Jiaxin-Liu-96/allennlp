@@ -56,6 +56,7 @@ class ESIM(Model):
                  output_logit: FeedForward,
                  dropout: float = 0.5,
                  compute_f1: bool = False,
+                 attend_text_field: bool = False,
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None) -> None:
         super().__init__(vocab, regularizer)
@@ -74,6 +75,8 @@ class ESIM(Model):
         else:
             self.dropout = None
             self.rnn_input_dropout = None
+
+        self._attend_text_field = attend_text_field
 
         self._output_feedforward = output_feedforward
         self._output_logit = output_logit
@@ -171,6 +174,28 @@ class ESIM(Model):
                  encoded_hypothesis * attended_premise],
                 dim=-1
         )
+
+        # add in the attention of the embedded text field if needed
+        if self._attend_text_field:
+            similarity_matrix_embed = self._matrix_attention(embedded_premise, embedded_hypothesis)
+            p2h_attention_embed = masked_softmax(similarity_matrix_embed, hypothesis_mask)
+            attended_hypothesis_embed = weighted_sum(embedded_hypothesis, p2h_attention_embed)
+            h2p_attention_embed = masked_softmax(similarity_matrix_embed.transpose(1, 2).contiguous(), premise_mask)
+            attended_premise_embed = weighted_sum(embedded_premise, h2p_attention_embed)
+            premise_enhanced_embed = torch.cat(
+                    [embedded_premise, attended_hypothesis_embed,
+                     embedded_premise - attended_hypothesis_embed,
+                     embedded_premise * attended_hypothesis_embed],
+                    dim=-1
+            )
+            hypothesis_enhanced_embed = torch.cat(
+                    [embedded_hypothesis, attended_premise_embed,
+                     embedded_hypothesis - attended_premise_embed,
+                     embedded_hypothesis * attended_premise_embed],
+                    dim=-1
+            )
+            premise_enhanced = torch.cat([premise_enhanced, premise_enhanced_embed], dim=-1)
+            hypothesis_enhanced = torch.cat([hypothesis_enhanced, hypothesis_enhanced_embed], dim=-1)
 
         # The projection layer down to the model dimension.  Dropout is not applied before
         # projection.
