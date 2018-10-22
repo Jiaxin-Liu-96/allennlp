@@ -85,7 +85,8 @@ class ESIM(Model):
 
         check_dimensions_match(text_field_embedder.get_output_dim(), encoder.get_input_dim(),
                                "text field embedding dim", "encoder input dim")
-        check_dimensions_match(encoder.get_output_dim() * 4, projection_feedforward.get_input_dim(),
+        if not self._attend_text_field:
+            check_dimensions_match(encoder.get_output_dim() * 4, projection_feedforward.get_input_dim(),
                                "encoder output dim", "projection feedforward input")
         check_dimensions_match(projection_feedforward.get_output_dim(), inference_encoder.get_input_dim(),
                                "proj feedforward output dim", "inference lstm input dim")
