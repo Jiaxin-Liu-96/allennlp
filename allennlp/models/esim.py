@@ -285,6 +285,6 @@ class ESIM(Model):
                 metrics['f1'] = self._f1.get_metric(reset)[2]
                 metrics['accuracy_and_f1'] = 0.5 * (metrics['accuracy'] + metrics['f1'])
         else:
-            metrics = {k: m.get_metric(reset) for k, m in self._metrics.items()}
+            metrics = {k: float(m.get_metric(reset)) for k, m in self._metrics.items()}
             metrics['avg_correlation'] = 0.5 * (metrics['spearman'] + metrics['pearson'])
         return metrics
