@@ -57,6 +57,7 @@ class ESIM(Model):
                  dropout: float = 0.5,
                  compute_f1: bool = False,
                  attend_text_field: bool = False,
+                 is_symmetric: bool = False,
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None) -> None:
         super().__init__(vocab, regularizer)
@@ -77,6 +78,7 @@ class ESIM(Model):
             self.rnn_input_dropout = None
 
         self._attend_text_field = attend_text_field
+        self._is_symmetric = is_symmetric
 
         self._output_feedforward = output_feedforward
         self._output_logit = output_logit
@@ -236,6 +238,15 @@ class ESIM(Model):
 
         output_hidden = self._output_feedforward(v_all)
         label_logits = self._output_logit(output_hidden)
+
+        if self._is_symmetric:
+            # swap a and b and re-compute
+            v_all = torch.cat([v_b_avg, v_b_max, v_a_avg, v_a_max], dim=1)
+            if self.dropout:
+                v_all = self.dropout(v_all)
+                output_hidden = self._output_feedforward(v_all)
+                label_logits = 0.5 * (label_logits + self._output_logit(output_hidden))
+
         label_probs = torch.nn.functional.softmax(label_logits, dim=-1)
 
         output_dict = {"label_logits": label_logits, "label_probs": label_probs}
