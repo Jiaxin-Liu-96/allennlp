@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Union
 import json
 import logging
 
@@ -79,18 +79,18 @@ class SnliReader(DatasetReader):
     def text_to_instance(self,  # type: ignore
                          premise: str,
                          hypothesis: str,
-                         label: str = None) -> Instance:
+                         label: Union[str, float] = None) -> Instance:
         # pylint: disable=arguments-differ
         fields: Dict[str, Field] = {}
         premise_tokens = self._tokenizer.tokenize(premise)[:self._max_length]
         hypothesis_tokens = self._tokenizer.tokenize(hypothesis)[:self._max_length]
         fields['premise'] = TextField(premise_tokens, self._token_indexers)
         fields['hypothesis'] = TextField(hypothesis_tokens, self._token_indexers)
-        if label:
+        if label is not None and label != '':
             if self._label_type == 'str':
                 fields['label'] = LabelField(label)
             elif self._label_type == 'float':
-                field['label'] = ArrayField(numpy.array(label))
+                fields['label'] = ArrayField(numpy.array([label]))
 
         metadata = {"premise_tokens": [x.text for x in premise_tokens],
                     "hypothesis_tokens": [x.text for x in hypothesis_tokens]}

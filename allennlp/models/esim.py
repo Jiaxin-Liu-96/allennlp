@@ -58,6 +58,7 @@ class ESIM(Model):
                  compute_f1: bool = False,
                  attend_text_field: bool = False,
                  is_symmetric: bool = False,
+                 is_regression: bool = False,
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None) -> None:
         super().__init__(vocab, regularizer)
@@ -79,6 +80,7 @@ class ESIM(Model):
 
         self._attend_text_field = attend_text_field
         self._is_symmetric = is_symmetric
+        self._is_regression = is_regression
 
         self._output_feedforward = output_feedforward
         self._output_logit = output_logit
@@ -93,14 +95,20 @@ class ESIM(Model):
         check_dimensions_match(projection_feedforward.get_output_dim(), inference_encoder.get_input_dim(),
                                "proj feedforward output dim", "inference lstm input dim")
 
-        self._accuracy = CategoricalAccuracy()
-        if compute_f1:
-            # DANGER :make sure 1 is the first label in the dataset
-            # so it has index 0...
-            self._f1 = F1Measure(0)
         self._compute_f1 = compute_f1
 
-        self._loss = torch.nn.CrossEntropyLoss()
+        if self._is_regression:
+            from jiant.allennlp_mods.correlation import Correlation
+            self._metrics = {'pearson': Correlation("pearson"),
+                             "spearman": Correlation("spearman")}
+            self._loss = torch.nn.MSELoss()
+        else:
+            self._accuracy = CategoricalAccuracy()
+            if compute_f1:
+                # DANGER :make sure 1 is the first label in the dataset
+                # so it has index 0...
+                self._f1 = F1Measure(0)
+            self._loss = torch.nn.CrossEntropyLoss()
 
         initializer(self)
 
@@ -247,22 +255,36 @@ class ESIM(Model):
                 output_hidden = self._output_feedforward(v_all)
                 label_logits = 0.5 * (label_logits + self._output_logit(output_hidden))
 
-        label_probs = torch.nn.functional.softmax(label_logits, dim=-1)
+        output_dict = {"label_logits": label_logits}
 
-        output_dict = {"label_logits": label_logits, "label_probs": label_probs}
-
-        if label is not None:
-            loss = self._loss(label_logits, label.long().view(-1))
-            self._accuracy(label_logits, label)
-            if self._compute_f1:
-                self._f1(label_logits, label)
-            output_dict["loss"] = loss
+        if not self._is_regression:
+            label_probs = torch.nn.functional.softmax(label_logits, dim=-1)
+            output_dict["label_probs"] = label_probs
+            if label is not None:
+                loss = self._loss(label_logits, label.long().view(-1))
+                self._accuracy(label_logits, label)
+                if self._compute_f1:
+                    self._f1(label_logits, label)
+                output_dict["loss"] = loss
+        else:
+            # label_logits is the output variable for regression
+            if label is not None:
+                loss = self._loss(label_logits.view(-1), label.view(-1))
+                detached_logits = label_logits.view(-1).detach()
+                detached_label = label.view(-1).detach()
+                for m in self._metrics.values():
+                    m(detached_logits, detached_label)
+                output_dict["loss"] = loss
 
         return output_dict
 
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
-        metrics = {'accuracy': self._accuracy.get_metric(reset)}
-        if self._compute_f1:
-            metrics['f1'] = self._f1.get_metric(reset)[2]
-            metrics['accuracy_and_f1'] = 0.5 * (metrics['accuracy'] + metrics['f1'])
+        if not self._is_regression:
+            metrics = {'accuracy': self._accuracy.get_metric(reset)}
+            if self._compute_f1:
+                metrics['f1'] = self._f1.get_metric(reset)[2]
+                metrics['accuracy_and_f1'] = 0.5 * (metrics['accuracy'] + metrics['f1'])
+        else:
+            metrics = {k: m.get_metric(reset) for k, m in self._metrics.items()}
+            metrics['avg_correlation'] = 0.5 * (metrics['spearman'] + metrics['pearson'])
         return metrics
