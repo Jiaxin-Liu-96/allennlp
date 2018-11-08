@@ -34,8 +34,7 @@ class ScalarMix(torch.nn.Module):
         self.gamma = Parameter(torch.FloatTensor([1.0]))
         if use_temp:
             self.scalar_temp = Parameter(torch.FloatTensor([1.0]))
-        else:
-            self.scalar_temp = torch.FloatTensor([1.0])
+        self.use_temp = use_temp
 
 
     def forward(self, tensors: List[torch.Tensor],  # pylint: disable=arguments-differ
@@ -61,7 +60,12 @@ class ScalarMix(torch.nn.Module):
             variance = torch.sum(((tensor_masked - mean) * broadcast_mask)**2) / num_elements_not_masked
             return (tensor - mean) / torch.sqrt(variance + 1E-12)
 
-        temp = torch.max(self.scalar_temp, torch.FloatTensor([0.0]))
+        if self.use_temp:
+            zero = torch.FloatTensor([0.0]).to(self.scalar_temp.device)
+            temp = torch.max(self.scalar_temp, zero)
+        else:
+            temp = 1.0
+
         if self.num_heads == 1:
             normed_weights = torch.nn.functional.softmax(temp * torch.cat([parameter for parameter
                                                                 in self.scalar_parameters]), dim=0)
