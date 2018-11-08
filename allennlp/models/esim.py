@@ -55,6 +55,7 @@ class ESIM(Model):
                  output_feedforward: FeedForward,
                  output_logit: FeedForward,
                  dropout: float = 0.5,
+                 embed_dropout: float = None,
                  compute_f1: bool = False,
                  attend_text_field: bool = False,
                  is_symmetric: bool = False,
@@ -74,9 +75,12 @@ class ESIM(Model):
         if dropout:
             self.dropout = torch.nn.Dropout(dropout)
             self.rnn_input_dropout = InputVariationalDropout(dropout)
+            if embed_dropout is not None:
+                self.embed_dropout = InputVariationalDropout(embed_dropout)
+            else:
+                self.embed_dropout = InputVariationalDropout(dropout)
         else:
             self.dropout = None
-            self.rnn_input_dropout = None
 
         self._attend_text_field = attend_text_field
         self._is_symmetric = is_symmetric
@@ -151,9 +155,9 @@ class ESIM(Model):
         hypothesis_mask = get_text_field_mask(hypothesis).float()
 
         # apply dropout for LSTM
-        if self.rnn_input_dropout:
-            embedded_premise = self.rnn_input_dropout(embedded_premise)
-            embedded_hypothesis = self.rnn_input_dropout(embedded_hypothesis)
+        if self.dropout:
+            embedded_premise = self.embed_dropout(embedded_premise)
+            embedded_hypothesis = self.embed_dropout(embedded_hypothesis)
 
         # encode premise and hypothesis
         encoded_premise = self._encoder(embedded_premise, premise_mask)
@@ -214,7 +218,7 @@ class ESIM(Model):
         projected_enhanced_hypothesis = self._projection_feedforward(hypothesis_enhanced)
 
         # Run the inference layer
-        if self.rnn_input_dropout:
+        if self.dropout:
             projected_enhanced_premise = self.rnn_input_dropout(projected_enhanced_premise)
             projected_enhanced_hypothesis = self.rnn_input_dropout(projected_enhanced_hypothesis)
         v_ai = self._inference_encoder(projected_enhanced_premise, premise_mask)
