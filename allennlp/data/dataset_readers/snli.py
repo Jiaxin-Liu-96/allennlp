@@ -39,6 +39,7 @@ class SnliReader(DatasetReader):
                  label_str: str = "gold_label",
                  label_type: str = "str",
                  max_length: int = None,
+                 cached_pair: bool = False,
                  lazy: bool = False) -> None:
         super().__init__(lazy)
         self._tokenizer = tokenizer or WordTokenizer()
@@ -48,6 +49,7 @@ class SnliReader(DatasetReader):
         if max_length is None:
             max_length = int(1e9)
         self._max_length = max_length
+        self._cached_pair = cached_pair
         assert label_type in ['str', 'float']
 
     @overrides
@@ -84,8 +86,19 @@ class SnliReader(DatasetReader):
         fields: Dict[str, Field] = {}
         premise_tokens = self._tokenizer.tokenize(premise)[:self._max_length]
         hypothesis_tokens = self._tokenizer.tokenize(hypothesis)[:self._max_length]
-        fields['premise'] = TextField(premise_tokens, self._token_indexers)
-        fields['hypothesis'] = TextField(hypothesis_tokens, self._token_indexers)
+        if not self._cached_pair:
+            fields['premise'] = TextField(premise_tokens, self._token_indexers)
+            fields['hypothesis'] = TextField(hypothesis_tokens, self._token_indexers)
+        else:
+            # need to concatenate for indexing
+            all_tokens = premise_tokens + [Token('|||')] + hypothesis_tokens
+            fields['premise'] = TextField(
+                    [Token('0')] + all_tokens, self._token_indexers
+            )
+            fields['hypothesis'] = TextField(
+                    [Token('1')] + all_tokens, self._token_indexers
+            )
+
         if label is not None and label != '':
             if self._label_type == 'str':
                 fields['label'] = LabelField(label)
