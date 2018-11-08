@@ -14,7 +14,7 @@ class ScalarMix(torch.nn.Module):
     before weighting.
     """
     def __init__(self, mixture_size: int, do_layer_norm: bool = False,
-                 num_heads: int = None) -> None:
+                 num_heads: int = None, use_temp: bool = False) -> None:
         super(ScalarMix, self).__init__()
 
         self.mixture_size = mixture_size
@@ -32,6 +32,10 @@ class ScalarMix(torch.nn.Module):
                                                 for _ in range(mixture_size)])
 
         self.gamma = Parameter(torch.FloatTensor([1.0]))
+        if use_temp:
+            self.scalar_temp = Parameter(torch.FloatTensor([1.0]))
+        else:
+            self.scalar_temp = torch.FloatTensor([1.0])
 
 
     def forward(self, tensors: List[torch.Tensor],  # pylint: disable=arguments-differ
@@ -57,14 +61,15 @@ class ScalarMix(torch.nn.Module):
             variance = torch.sum(((tensor_masked - mean) * broadcast_mask)**2) / num_elements_not_masked
             return (tensor - mean) / torch.sqrt(variance + 1E-12)
 
+        temp = torch.max(self.scalar_temp, torch.FloatTensor([0.0]))
         if self.num_heads == 1:
-            normed_weights = torch.nn.functional.softmax(torch.cat([parameter for parameter
+            normed_weights = torch.nn.functional.softmax(temp * torch.cat([parameter for parameter
                                                                 in self.scalar_parameters]), dim=0)
             normed_weights = torch.split(normed_weights, split_size_or_sections=1)
         else:
             # softmax normalize across layers for each head
             normed_weights = torch.nn.functional.softmax(
-                    torch.cat([parameters.unsqueeze(0) for parameters in self.scalar_parameters], dim=0),
+                    temp * torch.cat([parameters.unsqueeze(0) for parameters in self.scalar_parameters], dim=0),
             dim=0)
             normed_weights = [
                     w.squeeze(0)

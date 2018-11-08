@@ -56,7 +56,7 @@ class TestScalarMix(AllenNlpTestCase):
         numpy.testing.assert_almost_equal(expected_result, result.data.numpy(), decimal=6)
 
     def test_scalar_mix_num_heads(self):
-        mixture = ScalarMix(3, num_heads=7)
+        mixture = ScalarMix(3, num_heads=7, use_temp=True)
         tensors = [torch.randn([3, 4, 7 * 5]) for _ in range(3)]
         # TODO: add correctness check
         result = mixture(tensors)
