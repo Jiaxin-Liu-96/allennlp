@@ -13,15 +13,26 @@ class ScalarMix(torch.nn.Module):
     In addition, if ``do_layer_norm=True`` then apply layer normalization to each tensor
     before weighting.
     """
-    def __init__(self, mixture_size: int, do_layer_norm: bool = False) -> None:
+    def __init__(self, mixture_size: int, do_layer_norm: bool = False,
+                 num_heads: int = None) -> None:
         super(ScalarMix, self).__init__()
 
         self.mixture_size = mixture_size
         self.do_layer_norm = do_layer_norm
+        self.num_heads = num_heads
 
-        self.scalar_parameters = ParameterList([Parameter(torch.FloatTensor([0.0]))
+        if num_heads is None:
+            num_heads = 1
+        else:
+            assert not do_layer_norm
+
+        self.num_heads = num_heads
+
+        self.scalar_parameters = ParameterList([Parameter(torch.FloatTensor([0.0] * num_heads))
                                                 for _ in range(mixture_size)])
+
         self.gamma = Parameter(torch.FloatTensor([1.0]))
+
 
     def forward(self, tensors: List[torch.Tensor],  # pylint: disable=arguments-differ
                 mask: torch.Tensor = None) -> torch.Tensor:
@@ -46,15 +57,44 @@ class ScalarMix(torch.nn.Module):
             variance = torch.sum(((tensor_masked - mean) * broadcast_mask)**2) / num_elements_not_masked
             return (tensor - mean) / torch.sqrt(variance + 1E-12)
 
-        normed_weights = torch.nn.functional.softmax(torch.cat([parameter for parameter
+        if self.num_heads == 1:
+            normed_weights = torch.nn.functional.softmax(torch.cat([parameter for parameter
                                                                 in self.scalar_parameters]), dim=0)
-        normed_weights = torch.split(normed_weights, split_size_or_sections=1)
+            normed_weights = torch.split(normed_weights, split_size_or_sections=1)
+        else:
+            # softmax normalize across layers for each head
+            normed_weights = torch.nn.functional.softmax(
+                    torch.cat([parameters.unsqueeze(0) for parameters in self.scalar_parameters], dim=0),
+            dim=0)
+            normed_weights = [
+                    w.squeeze(0)
+                    for w in torch.chunk(normed_weights, dim=0, chunks=self.mixture_size)
+            ]
 
         if not self.do_layer_norm:
-            pieces = []
-            for weight, tensor in zip(normed_weights, tensors):
-                pieces.append(weight * tensor)
-            return self.gamma * sum(pieces)
+
+            if self.num_heads == 1:
+                pieces = []
+                for weight, tensor in zip(normed_weights, tensors):
+                    pieces.append(weight * tensor)
+                return self.gamma * sum(pieces)
+            else:
+                head_dim = tensors[0].shape[-1] // self.num_heads
+                pieces = []
+                for weight, tensor in zip(normed_weights, tensors):
+                    # need to partition last dimension of tensor
+                    # heads = list length num_layers each with one head
+                    heads = torch.split(tensor, split_size_or_sections=head_dim, dim=-1)
+                    weighted_heads = []
+                    for w, h in zip(
+                            torch.split(weight, split_size_or_sections=1),
+                            heads
+                    ):
+                        weighted_heads.append(w * h)
+
+                    pieces.append(torch.cat(weighted_heads, dim=-1))
+
+                return self.gamma * sum(pieces)
 
         else:
             mask_float = mask.float()
