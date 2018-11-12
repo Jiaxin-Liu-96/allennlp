@@ -87,6 +87,7 @@ class CrfTagger(Model):
                  calculate_span_f1: bool = None,
                  dropout: Optional[float] = None,
                  verbose_metrics: bool = False,
+                 use_crf: bool = True,
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None) -> None:
         super().__init__(vocab, regularizer)
@@ -135,6 +136,9 @@ class CrfTagger(Model):
             constraints = None
 
         self.include_start_end_transitions = include_start_end_transitions
+        self.use_crf = use_crf
+        # even if we aren't using the CRF to learn transition parameters,
+        # and compute loss, we can still use it for constrained decoding
         self.crf = ConditionalRandomField(
                 self.num_tags, constraints,
                 include_start_end_transitions=include_start_end_transitions
@@ -219,8 +223,8 @@ class CrfTagger(Model):
             encoded_text = self._feedforward(encoded_text)
 
         logits = self.tag_projection_layer(encoded_text)
-        best_paths = self.crf.viterbi_tags(logits, mask)
 
+        best_paths = self.crf.viterbi_tags(logits, mask)
         # Just get the tags and ignore the score.
         predicted_tags = [x for x, y in best_paths]
 
@@ -228,8 +232,13 @@ class CrfTagger(Model):
 
         if tags is not None:
             # Add negative log-likelihood as loss
-            log_likelihood = self.crf(logits, tags, mask)
-            output["loss"] = -log_likelihood
+            if self.use_crf:
+                log_likelihood = self.crf(logits, tags, mask)
+                loss = -log_likelihood
+            else:
+                loss = util.sequence_cross_entropy_with_logits(logits, tags, mask)
+
+            output["loss"] = loss
 
             # Represent viterbi tags as "class probabilities" that we can
             # feed into the metrics
