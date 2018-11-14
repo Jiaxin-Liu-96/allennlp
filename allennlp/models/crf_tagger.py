@@ -145,6 +145,11 @@ class CrfTagger(Model):
                 self.num_tags, constraints,
                 include_start_end_transitions=include_start_end_transitions
         )
+        if not self.use_crf:
+            self.crf.transitions.data.zero_()
+            if include_start_end_transitions:
+                self.crf.start_transitions.data.zero_()
+                self.crf.end_transitions.data.zero_()
 
         self.metrics = {
                 "accuracy": CategoricalAccuracy(),
@@ -229,7 +234,10 @@ class CrfTagger(Model):
 
         logits = self.tag_projection_layer(encoded_text)
 
-        best_paths = self.crf.viterbi_tags(logits, mask)
+        if self.use_crf:
+            best_paths = self.crf.viterbi_tags(logits, mask)
+        else:
+            best_paths = self.crf.viterbi_tags(torch.nn.functional.softmax(logits, dim=-1), mask)
         # Just get the tags and ignore the score.
         predicted_tags = [x for x, y in best_paths]
 
