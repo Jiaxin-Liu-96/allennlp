@@ -7,7 +7,7 @@ from allennlp.data import Vocabulary
 from allennlp.models.model import Model
 from allennlp.modules import FeedForward, InputVariationalDropout
 from allennlp.modules.matrix_attention.legacy_matrix_attention import LegacyMatrixAttention
-from allennlp.modules import Seq2SeqEncoder, SimilarityFunction, TextFieldEmbedder
+from allennlp.modules import Seq2SeqEncoder, SimilarityFunction, TextFieldEmbedder, TokenEmbedder
 from allennlp.nn import InitializerApplicator, RegularizerApplicator
 from allennlp.nn.util import get_text_field_mask, masked_softmax, weighted_sum, replace_masked_values
 from allennlp.training.metrics import CategoricalAccuracy, F1Measure
@@ -60,6 +60,7 @@ class ESIM(Model):
                  attend_text_field: bool = False,
                  is_symmetric: bool = False,
                  is_regression: bool = False,
+                 cached_cls: TokenEmbedder = None,
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None) -> None:
         super().__init__(vocab, regularizer)
@@ -113,6 +114,8 @@ class ESIM(Model):
                 # so it has index 0...
                 self._f1 = F1Measure(0)
             self._loss = torch.nn.CrossEntropyLoss()
+
+        self.cached_cls = cached_cls
 
         initializer(self)
 
@@ -249,6 +252,13 @@ class ESIM(Model):
             v_all = self.dropout(v_all)
 
         output_hidden = self._output_feedforward(v_all)
+
+        # add in the cls if needed
+        if self.cached_cls:
+            # (batch_size, embed_dim)
+            cls_embeddings = self.cached_cls(premise['bert'])
+            output_hidden = torch.cat([output_hidden, cls_embeddings], dim=1)
+
         label_logits = self._output_logit(output_hidden)
 
         if self._is_symmetric:
