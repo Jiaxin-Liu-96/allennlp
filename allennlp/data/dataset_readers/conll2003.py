@@ -147,8 +147,9 @@ class Conll2003DatasetReader(DatasetReader):
                         while start < len(tokens):
                             # look for an end
                             end = min(start + self.max_sequence_length, len(tokens))
-                            while ner_tags[end-1] != 'O':
+                            while ner_tags[end-1] != 'O' and end != len(tokens):
                                 end -= 1
+                            assert end > start
                             yield self.text_to_instance(
                                 tokens[start:end],
                                 pos_tags[start:end],
