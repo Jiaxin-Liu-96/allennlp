@@ -26,6 +26,13 @@ def _is_divider(line: str) -> bool:
         else:
             return False
 
+def _is_doc_divider(line: str) -> bool:
+    first_token = line.split()[0]
+    if first_token == "-DOCSTART-":  # pylint: disable=simplifiable-if-statement
+        return True
+    else:
+        return False
+
 
 @DatasetReader.register("conll2003")
 class Conll2003DatasetReader(DatasetReader):
@@ -79,6 +86,8 @@ class Conll2003DatasetReader(DatasetReader):
                  feature_labels: Sequence[str] = (),
                  lazy: bool = False,
                  coding_scheme: str = "IOB1",
+                 document_context: bool = False,
+                 max_sequence_length: int = None,
                  label_namespace: str = "labels") -> None:
         super().__init__(lazy)
         self._token_indexers = token_indexers or {'tokens': SingleIdTokenIndexer()}
@@ -94,6 +103,8 @@ class Conll2003DatasetReader(DatasetReader):
         self.feature_labels = set(feature_labels)
         self.coding_scheme = coding_scheme
         self.label_namespace = label_namespace
+        self.document_context = document_context
+        self.max_sequence_length = max_sequence_length
         self._original_coding_scheme = "IOB1"
 
     @overrides
@@ -104,8 +115,19 @@ class Conll2003DatasetReader(DatasetReader):
         with open(file_path, "r") as data_file:
             logger.info("Reading instances from lines in file at: %s", file_path)
 
+            if self.document_context:
+                divider_func = _is_doc_divider
+                def iitt():
+                    for line in data_file:
+                        if line.strip() != "":
+                            yield line
+                it = iitt()
+            else:
+                divider_func = _is_divider
+                it = data_file
+
             # Group into alternative divider / sentence chunks.
-            for is_divider, lines in itertools.groupby(data_file, _is_divider):
+            for is_divider, lines in itertools.groupby(it, divider_func):
                 # Ignore the divider chunks, so that `lines` corresponds to the words
                 # of a single sentence.
                 if not is_divider:
@@ -116,7 +138,24 @@ class Conll2003DatasetReader(DatasetReader):
                     # TextField requires ``Token`` objects
                     tokens = [Token(token) for token in tokens_]
 
-                    yield self.text_to_instance(tokens, pos_tags, chunk_tags, ner_tags)
+                    # split if necessary
+                    if self.max_sequence_length is None or len(tokens) < self.max_sequence_length:
+                        yield self.text_to_instance(tokens, pos_tags, chunk_tags, ner_tags)
+                    else:
+                        # need to split the sequences...
+                        start = 0
+                        while start < len(tokens):
+                            # look for an end
+                            end = min(start + self.max_sequence_length, len(tokens))
+                            while ner_tags[end-1] != 'O':
+                                end -= 1
+                            yield self.text_to_instance(
+                                tokens[start:end],
+                                pos_tags[start:end],
+                                chunk_tags[start:end],
+                                ner_tags[start:end]
+                            )
+                            start = end
 
     def text_to_instance(self, # type: ignore
                          tokens: List[Token],
