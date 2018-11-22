@@ -17,7 +17,8 @@
                     "start_tokens": [
                         259
                     ]
-                }
+                },
+                "min_padding_length": 5
             }
         }
     },
@@ -46,7 +47,7 @@
             "type": "gru",
             "bidirectional": true,
             "hidden_size": 100,
-            "input_size": 1144,
+            "input_size": 1144,  // elmo (1024) + cnn (100) + num_context_answers (2) * marker_embedding_dim (10)
             "num_layers": 1
         },
         "residual_encoder": {
