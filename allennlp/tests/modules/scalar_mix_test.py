@@ -73,3 +73,11 @@ class TestScalarMix(AllenNlpTestCase):
         # TODO: add correctness check
         result = mixture(tensors)
         assert list(result.shape) == [3, 4, 7 * 5]
+
+    def test_scalar_mix_no_apply_softmax(self):
+        mixture = ScalarMix(3, apply_softmax=False)
+        tensors = [torch.randn([3, 4, 7 * 5]) for _ in range(3)]
+        # TODO: add correctness check
+        result = mixture(tensors)
+        assert list(result.shape) == [3, 4, 7 * 5]
+

@@ -18,7 +18,8 @@ class ScalarMix(torch.nn.Module):
                  do_layer_norm: bool = False,
                  initial_scalar_parameters: List[float] = None,
                  num_heads: int = None, use_temp: bool = False,
-                 trainable: bool = True) -> None:
+                 trainable: bool = True,
+                 apply_softmax: bool = True) -> None:
         super(ScalarMix, self).__init__()
         self.mixture_size = mixture_size
         self.do_layer_norm = do_layer_norm
@@ -46,6 +47,10 @@ class ScalarMix(torch.nn.Module):
         if use_temp:
             self.scalar_temp = Parameter(torch.FloatTensor([1.0]))
         self.use_temp = use_temp
+        self.apply_softmax = apply_softmax
+        if not self.apply_softmax:
+            assert num_heads == 1
+            assert not self.use_temp
 
     def forward(self, tensors: List[torch.Tensor],  # pylint: disable=arguments-differ
                 mask: torch.Tensor = None) -> torch.Tensor:
@@ -77,8 +82,13 @@ class ScalarMix(torch.nn.Module):
             temp = 1.0
 
         if self.num_heads == 1:
-            normed_weights = torch.nn.functional.softmax(temp * torch.cat([parameter for parameter
+            if self.apply_softmax:
+                normed_weights = torch.nn.functional.softmax(temp * torch.cat([parameter for parameter
                                                                 in self.scalar_parameters]), dim=0)
+            else:
+                params = torch.clamp(torch.cat([parameter for parameter in self.scalar_parameters]), min=0.0, max=1e12)
+                normed_weights = params / params.sum()
+
             normed_weights = torch.split(normed_weights, split_size_or_sections=1)
         else:
             # softmax normalize across layers for each head
