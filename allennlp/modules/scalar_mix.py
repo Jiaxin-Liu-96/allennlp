@@ -86,8 +86,7 @@ class ScalarMix(torch.nn.Module):
                 normed_weights = torch.nn.functional.softmax(temp * torch.cat([parameter for parameter
                                                                 in self.scalar_parameters]), dim=0)
             else:
-                params = torch.clamp(torch.cat([parameter for parameter in self.scalar_parameters]), min=0.0, max=1e12)
-                normed_weights = params / params.sum()
+                normed_weights = torch.clamp(torch.cat([parameter for parameter in self.scalar_parameters]), min=0.0, max=1e12)
 
             normed_weights = torch.split(normed_weights, split_size_or_sections=1)
         else:
