@@ -93,7 +93,7 @@ class SnliReader(DatasetReader):
                                  [self._special_tokens['delimiter']] + \
                                  [x.text for x in hypothesis_tokens] + \
                                  [self._special_tokens['predict']]
-                    yield self.text_to_instance_flat(all_tokens, label)
+                    yield self.text_to_instance(all_tokens, None, label)
 
 
     @overrides
@@ -102,6 +102,9 @@ class SnliReader(DatasetReader):
                          hypothesis_tokens,
                          label: Union[str, float] = None) -> Instance:
         # pylint: disable=arguments-differ
+        if hypothesis_tokens is None:
+            return self._text_to_instance_flat(premise_tokens, label)
+
         fields: Dict[str, Field] = {}
         if not self._cached_pair:
             fields['premise'] = TextField(premise_tokens, self._token_indexers)
@@ -127,7 +130,7 @@ class SnliReader(DatasetReader):
         fields["metadata"] = MetadataField(metadata)
         return Instance(fields)
 
-    def text_to_instance_flat(self,  # type: ignore
+    def _text_to_instance_flat(self,  # type: ignore
                          all_tokens,
                          label: Union[str, float] = None) -> Instance:
         # pylint: disable=arguments-differ
