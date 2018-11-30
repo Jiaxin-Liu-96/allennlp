@@ -41,6 +41,8 @@ class SnliReader(DatasetReader):
                  label_type: str = "str",
                  max_length: int = None,
                  cached_pair: bool = False,
+                 special_tokens: Dict[str, str] = None,
+                 flatten_sequence: bool = False,
                  lazy: bool = False) -> None:
         super().__init__(lazy)
         self._tokenizer = tokenizer or WordTokenizer()
@@ -52,6 +54,9 @@ class SnliReader(DatasetReader):
         self._max_length = max_length
         self._cached_pair = cached_pair
         assert label_type in ['str', 'float']
+
+        self._special_tokens = special_tokens
+        self._flatten_sequence = flatten_sequence
 
     @overrides
     def _read(self, file_path: str):
@@ -75,18 +80,29 @@ class SnliReader(DatasetReader):
 
                 premise = example["sentence1"]
                 hypothesis = example["sentence2"]
+                premise_tokens = self._tokenizer.tokenize(premise)[:self._max_length]
+                hypothesis_tokens = self._tokenizer.tokenize(hypothesis)[:self._max_length]
 
-                yield self.text_to_instance(premise, hypothesis, label)
+
+                if not self._flatten_sequence:
+                    yield self.text_to_instance(premise_tokens, hypothesis_tokens, label)
+                else:
+                    # concate the premise, hypothesis with special tokens
+                    all_tokens = [self._special_tokens['start']] + \
+                                 [x.text for x in premise_tokens] + \
+                                 [self._special_tokens['delimiter']] + \
+                                 [x.text for x in hypothesis_tokens] + \
+                                 [self._special_tokens['predict']]
+                    yield self.text_to_instance_flat(all_tokens, label)
+
 
     @overrides
     def text_to_instance(self,  # type: ignore
-                         premise: str,
-                         hypothesis: str,
+                         premise_tokens,
+                         hypothesis_tokens,
                          label: Union[str, float] = None) -> Instance:
         # pylint: disable=arguments-differ
         fields: Dict[str, Field] = {}
-        premise_tokens = self._tokenizer.tokenize(premise)[:self._max_length]
-        hypothesis_tokens = self._tokenizer.tokenize(hypothesis)[:self._max_length]
         if not self._cached_pair:
             fields['premise'] = TextField(premise_tokens, self._token_indexers)
             fields['hypothesis'] = TextField(hypothesis_tokens, self._token_indexers)
@@ -110,3 +126,22 @@ class SnliReader(DatasetReader):
                     "hypothesis_tokens": [x.text for x in hypothesis_tokens]}
         fields["metadata"] = MetadataField(metadata)
         return Instance(fields)
+
+    def text_to_instance_flat(self,  # type: ignore
+                         all_tokens,
+                         label: Union[str, float] = None) -> Instance:
+        # pylint: disable=arguments-differ
+        fields: Dict[str, Field] = {}
+        fields['tokens'] = TextField(
+                [Token(token) for token in all_tokens], self._token_indexers
+        )
+        if label is not None and label != '':
+            if self._label_type == 'str':
+                fields['label'] = LabelField(label)
+            elif self._label_type == 'float':
+                fields['label'] = ArrayField(numpy.array([label]))
+
+        return Instance(fields)
+
+
+
