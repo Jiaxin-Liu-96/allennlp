@@ -11,7 +11,7 @@ import torch
 import pytest
 from allennlp.common.checks import ConfigurationError
 
-from allennlp.common.testing import AllenNlpTestCase
+from allennlp.common.testing import AllenNlpTestCase, ModelTestCase
 from allennlp.training import Trainer
 from allennlp.training.trainer_base import TrainerBase
 from allennlp.training.learning_rate_schedulers import LearningRateScheduler
@@ -91,6 +91,7 @@ class TestTrainer(AllenNlpTestCase):
 
     @pytest.mark.skipif(not torch.cuda.is_available(), reason="No CUDA device registered.")
     def test_trainer_can_run_cuda(self):
+        self.model.cuda()
         trainer = Trainer(self.model, self.optimizer,
                           self.iterator, self.instances, num_epochs=2,
                           cuda_device=0)
@@ -99,7 +100,7 @@ class TestTrainer(AllenNlpTestCase):
     @pytest.mark.skipif(torch.cuda.device_count() < 2,
                         reason="Need multiple GPUs.")
     def test_trainer_can_run_multiple_gpu(self):
-
+        self.model.cuda()
         class MetaDataCheckWrapper(Model):
             """
             Checks that the metadata field has been correctly split across the batch dimension
@@ -494,3 +495,13 @@ class TestSparseClipGrad(AllenNlpTestCase):
         # Final norm should be 1.5
         grad = embedding.weight.grad.coalesce()  # pylint: disable=no-member
         self.assertAlmostEqual(grad._values().norm(2.0).item(), 1.5, places=5) # pylint: disable=protected-access
+
+class TestLanguageModelWithMultiprocessDatasetReader(ModelTestCase):
+    def setUp(self):
+        super().setUp()
+        self.set_up_model(self.FIXTURES_ROOT / 'language_model' / 'experiment_multiprocessing_reader.jsonnet',
+                          # Note the glob on the end of this path.
+                          self.FIXTURES_ROOT / 'language_model' / 'sentences*')
+
+    def test_unidirectional_language_model_can_train_save_and_load(self):
+        self.ensure_model_can_train_save_and_load(self.param_file)
