@@ -44,6 +44,7 @@ class Trainer(TrainerBase):
                  validation_iterator: DataIterator = None,
                  shuffle: bool = True,
                  num_epochs: int = 20,
+                 num_gradient_updates: int = None,
                  serialization_dir: Optional[str] = None,
                  num_serialized_models_to_keep: int = 20,
                  keep_serialized_model_every_num_seconds: int = None,
@@ -175,7 +176,15 @@ class Trainer(TrainerBase):
         # Get rid of + or -
         self._validation_metric = validation_metric[1:]
 
-        self._num_epochs = num_epochs
+        if num_gradient_updates is not None:
+            assert num_epochs is None
+            # trainig for a fixed number of gradient updates, set num_epochs
+            # to a large value and will break out by tracking number of updates
+            self._num_epochs = int(1e6)
+        else:
+            self._num_epochs = num_epochs
+
+        self._num_gradient_updates = num_gradient_updates
 
         self._checkpointer = Checkpointer(serialization_dir,
                                           keep_serialized_model_every_num_seconds,
@@ -436,6 +445,10 @@ class Trainer(TrainerBase):
                         logger.info("Ran out of patience.  Stopping training.")
                         break
 
+            if self._num_gradient_updates is not None:
+                if self._batch_num_total == self._num_gradient_updates:
+                    break
+
             self._tensorboard.log_metrics(train_metrics, val_metrics=val_metrics, log_to_console=True)
 
             # Create overall metrics dict
@@ -586,6 +599,7 @@ class Trainer(TrainerBase):
         validation_metric = params.pop("validation_metric", "-loss")
         shuffle = params.pop_bool("shuffle", True)
         num_epochs = params.pop_int("num_epochs", 20)
+        num_gradient_updates = params.pop_int("num_gradient_updates", None)
         cuda_device = parse_cuda_device(params.pop("cuda_device", -1))
         grad_norm = params.pop_float("grad_norm", None)
         grad_clipping = params.pop_float("grad_clipping", None)
@@ -626,6 +640,7 @@ class Trainer(TrainerBase):
                    validation_iterator=validation_iterator,
                    shuffle=shuffle,
                    num_epochs=num_epochs,
+                   num_gradient_updates=num_gradient_updates,
                    serialization_dir=serialization_dir,
                    cuda_device=cuda_device,
                    grad_norm=grad_norm,
