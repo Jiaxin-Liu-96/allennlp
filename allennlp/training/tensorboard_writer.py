@@ -92,6 +92,7 @@ class TensorboardWriter:
             for name, param in model.named_parameters():
                 self.add_train_scalar("parameter_mean/" + name, param.data.mean())
                 self.add_train_scalar("parameter_std/" + name, param.data.std())
+                self.add_train_scalar("parameter_abs_max/" + name, torch.abs(param.data).max())
                 if param.grad is not None:
                     if param.grad.is_sparse:
                         # pylint: disable=protected-access
