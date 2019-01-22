@@ -346,14 +346,25 @@ class Trainer(TrainerBase):
                     self._tensorboard.add_train_scalar("current_batch_size", cur_batch)
                     self._tensorboard.add_train_scalar("mean_batch_size", average)
 
+            should_stop_training = False
+            if self._num_gradient_updates is not None:
+                if self._batch_num_total == self._num_gradient_updates:
+                    should_stop_training = True
+
             # Save model if needed.
-            if self._model_save_interval is not None and (
-                    time.time() - last_save_time > self._model_save_interval
-            ):
+            if (self._model_save_interval is not None and (
+                    time.time() - last_save_time > self._model_save_interval)) or should_stop_training:
                 last_save_time = time.time()
                 self._save_checkpoint(
                         '{0}.{1}'.format(epoch, training_util.time_to_str(int(last_save_time)))
                 )
+
+            if should_stop_training:
+                break
+
+        if should_stop_training:
+            return None
+
         metrics = training_util.get_metrics(self.model, train_loss, batches_this_epoch, reset=True)
         metrics['cpu_memory_MB'] = peak_cpu_usage
         for (gpu_num, memory) in gpu_usage:
@@ -425,7 +436,11 @@ class Trainer(TrainerBase):
 
         for epoch in range(epoch_counter, self._num_epochs):
             epoch_start_time = time.time()
+
             train_metrics = self._train_epoch(epoch)
+            if train_metrics is None:
+                # signal from train_epoch to stop training
+                break
 
             # get peak of memory usage
             if 'cpu_memory_MB' in train_metrics:
@@ -448,10 +463,6 @@ class Trainer(TrainerBase):
                     if self._metric_tracker.should_stop_early():
                         logger.info("Ran out of patience.  Stopping training.")
                         break
-
-            if self._num_gradient_updates is not None:
-                if self._batch_num_total == self._num_gradient_updates:
-                    break
 
             self._tensorboard.log_metrics(train_metrics, val_metrics=val_metrics, log_to_console=True)
 
