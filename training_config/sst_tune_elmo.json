@@ -64,7 +64,7 @@
     "should_log_learning_rate": true,
 
     "num_epochs": 15,
-    "cuda_device": -1,
+    "cuda_device": 0,
     "num_serialized_models_to_keep": 1,
     "grad_norm": 5.0,
 
