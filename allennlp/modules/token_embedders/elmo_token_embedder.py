@@ -49,6 +49,7 @@ class ElmoTokenEmbedder(TokenEmbedder):
                  weight_file: str,
                  do_layer_norm: bool = False,
                  dropout: float = 0.5,
+                 lm_dropout: float = 0.0,
                  requires_grad: bool = False,
                  projection_dim: int = None,
                  vocab_to_cache: List[str] = None,
@@ -60,6 +61,7 @@ class ElmoTokenEmbedder(TokenEmbedder):
                           1,
                           do_layer_norm=do_layer_norm,
                           dropout=dropout,
+                          lm_dropout=lm_dropout,
                           requires_grad=requires_grad,
                           vocab_to_cache=vocab_to_cache,
                           scalar_mix_parameters=scalar_mix_parameters)
@@ -110,6 +112,7 @@ class ElmoTokenEmbedder(TokenEmbedder):
         requires_grad = params.pop('requires_grad', False)
         do_layer_norm = params.pop_bool('do_layer_norm', False)
         dropout = params.pop_float("dropout", 0.5)
+        lm_dropout = params.pop_float("lm_dropout", 0.0)
         namespace_to_cache = params.pop("namespace_to_cache", None)
         if namespace_to_cache is not None:
             vocab_to_cache = list(vocab.get_token_to_index_vocabulary(namespace_to_cache).keys())
@@ -122,6 +125,7 @@ class ElmoTokenEmbedder(TokenEmbedder):
                    weight_file=weight_file,
                    do_layer_norm=do_layer_norm,
                    dropout=dropout,
+                   lm_dropout=lm_dropout,
                    requires_grad=requires_grad,
                    projection_dim=projection_dim,
                    vocab_to_cache=vocab_to_cache,

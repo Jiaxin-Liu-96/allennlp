@@ -49,6 +49,8 @@ class ElmoLstm(_EncoderBase):
         The dropout probability to be used in a dropout scheme as stated in
         `A Theoretically Grounded Application of Dropout in Recurrent Neural Networks
         <https://arxiv.org/abs/1512.05287>`_ .
+    dropout: ``float``, optional (default = 0.0)
+        Dropout between LSTM layers (all layers except last).
     state_projection_clip_value: ``float``, optional, (default = None)
         The magnitude with which to clip the hidden_state after projecting it.
     memory_cell_clip_value: ``float``, optional, (default = None)
@@ -61,6 +63,7 @@ class ElmoLstm(_EncoderBase):
                  num_layers: int,
                  requires_grad: bool = False,
                  recurrent_dropout_probability: float = 0.0,
+                 dropout: float = 0.0,
                  memory_cell_clip_value: Optional[float] = None,
                  state_projection_clip_value: Optional[float] = None) -> None:
         super(ElmoLstm, self).__init__(stateful=True)
@@ -100,6 +103,11 @@ class ElmoLstm(_EncoderBase):
             backward_layers.append(backward_layer)
         self.forward_layers = forward_layers
         self.backward_layers = backward_layers
+
+        if dropout > 0:
+            self.dropout = torch.nn.Dropout(dropout)
+        else:
+            self.dropout = lambda x: x
 
     def forward(self,  # pylint: disable=arguments-differ
                 inputs: torch.Tensor,
@@ -222,6 +230,9 @@ class ElmoLstm(_EncoderBase):
             if layer_index != 0:
                 forward_output_sequence += forward_cache
                 backward_output_sequence += backward_cache
+            if layer_index < len(hidden_states) - 1:
+                forward_output_sequence = self.dropout(forward_output_sequence)
+                backward_output_sequence = self.dropout(backward_output_sequence)
 
             sequence_outputs.append(torch.cat([forward_output_sequence,
                                                backward_output_sequence], -1))

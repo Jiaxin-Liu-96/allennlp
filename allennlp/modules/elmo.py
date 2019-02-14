@@ -91,6 +91,7 @@ class Elmo(torch.nn.Module):
                  requires_grad: bool = False,
                  do_layer_norm: bool = False,
                  dropout: float = 0.5,
+                 lm_dropout: float = 0.0,
                  vocab_to_cache: List[str] = None,
                  keep_sentence_boundaries: bool = False,
                  scalar_mix_parameters: List[float] = None,
@@ -107,6 +108,7 @@ class Elmo(torch.nn.Module):
             self._elmo_lstm = _ElmoBiLm(options_file,
                                         weight_file,
                                         requires_grad=requires_grad,
+                                        dropout=lm_dropout,
                                         vocab_to_cache=vocab_to_cache)
         self._has_cached_vocab = vocab_to_cache is not None
         self._keep_sentence_boundaries = keep_sentence_boundaries
@@ -214,6 +216,7 @@ class Elmo(torch.nn.Module):
         do_layer_norm = params.pop_bool('do_layer_norm', False)
         keep_sentence_boundaries = params.pop_bool('keep_sentence_boundaries', False)
         dropout = params.pop_float('dropout', 0.5)
+        lm_dropout = params.pop_float('dropout', 0.0)
         scalar_mix_parameters = params.pop('scalar_mix_parameters', None)
         params.assert_empty(cls.__name__)
 
@@ -224,6 +227,7 @@ class Elmo(torch.nn.Module):
                    do_layer_norm=do_layer_norm,
                    keep_sentence_boundaries=keep_sentence_boundaries,
                    dropout=dropout,
+                   lm_dropout=lm_dropout,
                    scalar_mix_parameters=scalar_mix_parameters)
 
 
@@ -518,7 +522,8 @@ class _ElmoBiLm(torch.nn.Module):
                  options_file: str,
                  weight_file: str,
                  requires_grad: bool = False,
-                 vocab_to_cache: List[str] = None) -> None:
+                 vocab_to_cache: List[str] = None,
+                 dropout: float = 0.0) -> None:
         super(_ElmoBiLm, self).__init__()
 
         self._token_embedder = _ElmoCharacterEncoder(options_file, weight_file, requires_grad=requires_grad)
@@ -540,6 +545,11 @@ class _ElmoBiLm(torch.nn.Module):
             # constructor.
             self.create_cached_cnn_embeddings(vocab_to_cache)
 
+        if dropout > 0:
+            self.dropout = torch.nn.Dropout(dropout)
+        else:
+            self.dropout = lambda x: x
+
         with open(cached_path(options_file), 'r') as fin:
             options = json.load(fin)
         if not options['lstm'].get('use_skip_connections'):
@@ -550,6 +560,7 @@ class _ElmoBiLm(torch.nn.Module):
                                    num_layers=options['lstm']['n_layers'],
                                    memory_cell_clip_value=options['lstm']['cell_clip'],
                                    state_projection_clip_value=options['lstm']['proj_clip'],
+                                   dropout=dropout,
                                    requires_grad=requires_grad)
         self._elmo_lstm.load_weights(weight_file)
         # Number of representation layers including context independent layer
@@ -605,6 +616,7 @@ class _ElmoBiLm(torch.nn.Module):
             token_embedding = self._token_embedder(inputs)
             mask = token_embedding['mask']
             type_representation = token_embedding['token_embedding']
+        type_representation = self.dropout(type_representation)
         lstm_outputs = self._elmo_lstm(type_representation, mask)
 
         # Prepare the output.  The first layer is duplicated.
