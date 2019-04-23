@@ -31,6 +31,11 @@ from allennlp.training.trainer_base import TrainerBase
 from allennlp.training import util as training_util
 from allennlp.training.moving_average import MovingAverage
 
+try:
+    from apex import amp
+except ImportError:
+    pass
+
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -732,7 +737,8 @@ class Trainer(TrainerBase):
         grad_clipping = params.pop_float("grad_clipping", None)
         lr_scheduler_params = params.pop("learning_rate_scheduler", None)
         fp16 = params.pop_bool("fp16", False)
-        fp16_params = params.pop("fp16_params", Params({"opt_level": "O1"}))
+        fp16_params = params.pop("fp16_params", Params({"opt_level": "O2",
+                                                        "keep_batchnorm_fp32": False}))
         momentum_scheduler_params = params.pop("momentum_scheduler", None)
         gradient_accumulation_batch_size = params.pop_int("gradient_accumulation_batch_size", None)
         num_steps_reset_metrics = params.pop_int("num_steps_reset_metrics", None)
