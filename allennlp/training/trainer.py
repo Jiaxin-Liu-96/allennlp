@@ -371,7 +371,8 @@ class Trainer(TrainerBase):
                     raise ValueError("nan loss encountered")
 
                 if self.fp16:
-                    self.optimizer.backward(loss)
+                    with amp.scale_loss(loss, self.optimizer) as scaled_loss:
+                        scaled_loss.backward()
                 else:
                     loss.backward()
 
@@ -731,6 +732,7 @@ class Trainer(TrainerBase):
         grad_clipping = params.pop_float("grad_clipping", None)
         lr_scheduler_params = params.pop("learning_rate_scheduler", None)
         fp16 = params.pop_bool("fp16", False)
+        fp16_params = params.pop("fp16_params", Params({"opt_level": "O1"}))
         momentum_scheduler_params = params.pop("momentum_scheduler", None)
         gradient_accumulation_batch_size = params.pop_int("gradient_accumulation_batch_size", None)
         num_steps_reset_metrics = params.pop_int("num_steps_reset_metrics", None)
@@ -739,8 +741,6 @@ class Trainer(TrainerBase):
             model_device = cuda_device[0]
         else:
             model_device = cuda_device
-        if fp16:
-            model.half()
         if model_device >= 0:
             # Moving model to GPU here so that the optimizer state gets constructed on
             # the right device.
@@ -751,18 +751,13 @@ class Trainer(TrainerBase):
         # If fp16, need to wrap the optimizer
         if fp16:
             try:
-                from apex.optimizers import FusedAdam
+                from apex import amp
             except ImportError:
                 raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
 
         optimizer = Optimizer.from_params(parameters, params.pop("optimizer"))
         if fp16:
-            # The FP16_Optimizer we use depends on whether the optimizer is FusedAdam or a regular pytorch optimizer
-            if isinstance(optimizer, FusedAdam):
-                from apex.optimizers import FP16_Optimizer
-            else:
-                from apex.fp16_utils import FP16_Optimizer
-            optimizer = FP16_Optimizer(optimizer, dynamic_loss_scale=True)
+            model, optimizer = amp.initialize(model, optimizer, **fp16_params.as_dict())
 
         if "moving_average" in params:
             moving_average = MovingAverage.from_params(params.pop("moving_average"), parameters=parameters)
