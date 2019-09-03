@@ -23,12 +23,17 @@ class TestParams(AllenNlpTestCase):
         model_params = params.pop("model")
         assert model_params.pop("type") == "bidaf"
 
+    def test_replace_none(self):
+        params = Params({"a": "None", "b": [1.0, "None", 2], "c": {"d": "None"}})
+        assert params["a"] is None
+        assert params["b"][1] is None
+        assert params["c"]["d"] is None
+
     def test_bad_unicode_environment_variables(self):
         filename = self.FIXTURES_ROOT / 'bidaf' / 'experiment.json'
         os.environ['BAD_ENVIRONMENT_VARIABLE'] = "\udce2"
         Params.from_file(filename)
         del os.environ['BAD_ENVIRONMENT_VARIABLE']
-
 
     def test_overrides(self):
         filename = self.FIXTURES_ROOT / 'bidaf' / 'experiment.json'
@@ -147,7 +152,6 @@ class TestParams(AllenNlpTestCase):
 
         params.assert_empty("TestParams")
 
-
     def test_regexes_with_backslashes(self):
         bad_regex = self.TEST_DIR / 'bad_regex.jsonnet'
         good_regex = self.TEST_DIR / 'good_regex.jsonnet'
@@ -205,6 +209,12 @@ class TestParams(AllenNlpTestCase):
         forced_variables = [
             # constituency parser
             'PTB_TRAIN_PATH', 'PTB_DEV_PATH', 'PTB_TEST_PATH',
+
+            # dependency parser
+            'PTB_DEPENDENCIES_TRAIN', 'PTB_DEPENDENCIES_VAL',
+
+            # multilingual dependency parser
+            'TRAIN_PATHNAME', 'DEV_PATHNAME', 'TEST_PATHNAME',
 
             # srl_elmo_5.5B
             'SRL_TRAIN_DATA_PATH', 'SRL_VALIDATION_DATA_PATH',
@@ -365,7 +375,6 @@ class TestParams(AllenNlpTestCase):
                 "a.bs.0.filename": my_file,
                 "a.bs.0.c.c_file": my_other_file
         }
-
 
     def test_as_ordered_dict(self):
         # keyD > keyC > keyE; keyDA > keyDB; Next all other keys alphabetically

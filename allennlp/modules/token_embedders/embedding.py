@@ -44,7 +44,7 @@ class Embedding(TokenEmbedder):
 
     Parameters
     ----------
-    num_embeddings : int:
+    num_embeddings : int
         Size of the dictionary of embeddings (vocabulary size).
     embedding_dim : int
         The size of each embedding vector.
@@ -60,18 +60,22 @@ class Embedding(TokenEmbedder):
         Whether or not to optimize the embedding parameters.
     max_norm : float, (optional, default=None)
         If given, will renormalize the embeddings to always have a norm lesser than this
-    norm_type : float, (optional, default=2):
+    norm_type : float, (optional, default=2)
         The p of the p-norm to compute for the max_norm option
-    scale_grad_by_freq : boolean, (optional, default=False):
+    scale_grad_by_freq : boolean, (optional, default=False)
         If given, this will scale gradients by the frequency of the words in the mini-batch.
-    sparse : bool, (optional, default=False):
+    sparse : bool, (optional, default=False)
         Whether or not the Pytorch backend should use a sparse representation of the embedding weight.
-    vocab_namespace : str, (optional, default=None):
+    vocab_namespace : str, (optional, default=None)
         In case of fine-tuning/transfer learning, the model's embedding matrix needs to be
         extended according to the size of extended-vocabulary. To be able to know how much to
         extend the embedding-matrix, it's necessary to know which vocab_namspace was used to
         construct it in the original training. We store vocab_namespace used during the original
         training as an attribute, so that it can be retrieved during fine-tuning.
+    pretrained_file : str, (optional, default=None)
+        Used to keep track of what is the source of the weights and loading more embeddings at test time.
+        **It does not load the weights from this pretrained_file.** For that purpose, use
+        ``Embedding.from_params``.
 
     Returns
     -------
@@ -133,6 +137,7 @@ class Embedding(TokenEmbedder):
         inputs = util.combine_initial_dims(inputs)
 
         embedded = embedding(inputs, self.weight,
+                             padding_idx=self.padding_index,
                              max_norm=self.max_norm,
                              norm_type=self.norm_type,
                              scale_grad_by_freq=self.scale_grad_by_freq,
@@ -234,7 +239,8 @@ class Embedding(TokenEmbedder):
                                                             extended_vocab, vocab_namespace)
             extra_weight = whole_weight[self.num_embeddings:, :]
 
-        extended_weight = torch.cat([self.weight.data, extra_weight], dim=0)
+        device = self.weight.data.device
+        extended_weight = torch.cat([self.weight.data, extra_weight.to(device)], dim=0)
         self.weight = torch.nn.Parameter(extended_weight, requires_grad=self.weight.requires_grad)
 
     # Custom logic requires custom from_params.
@@ -266,7 +272,7 @@ class Embedding(TokenEmbedder):
 
               where ``archive_uri`` can be a file system path or a URL. For example::
 
-                    "(http://nlp.stanford.edu/data/glove.twitter.27B.zip)#glove.twitter.27B.200d.txt"
+                    "(https://nlp.stanford.edu/data/glove.twitter.27B.zip)#glove.twitter.27B.200d.txt"
         """
         # pylint: disable=arguments-differ
         num_embeddings = params.pop_int('num_embeddings', None)

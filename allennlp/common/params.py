@@ -10,6 +10,7 @@ import copy
 import json
 import logging
 import os
+import zlib
 
 from overrides import overrides
 
@@ -168,6 +169,16 @@ def parse_overrides(serialized_overrides: str) -> Dict[str, Any]:
     else:
         return {}
 
+def _is_dict_free(obj: Any) -> bool:
+    """
+    Returns False if obj is a dict, or if it's a list with an element that _has_dict.
+    """
+    if isinstance(obj, dict):
+        return False
+    elif isinstance(obj, list):
+        return all(_is_dict_free(item) for item in obj)
+    else:
+        return True
 
 class Params(MutableMapping):
     """
@@ -192,7 +203,7 @@ class Params(MutableMapping):
     """
 
     # This allows us to check for the presence of "None" as a default argument,
-    # which we require because we make a distinction bewteen passing a value of "None"
+    # which we require because we make a distinction between passing a value of "None"
     # and passing no value to the default parameter of "pop".
     DEFAULT = object()
 
@@ -232,10 +243,12 @@ class Params(MutableMapping):
             self.files_to_archive[f"{self.history}{name}"] = cached_path(self.get(name))
 
     @overrides
-    def pop(self, key: str, default: Any = DEFAULT) -> Any:
+    def pop(self, key: str, default: Any = DEFAULT, keep_as_dict: bool = False) -> Any:
+        # pylint: disable=arguments-differ
         """
         Performs the functionality associated with dict.pop(key), along with checking for
-        returned dictionaries, replacing them with Param objects with an updated history.
+        returned dictionaries, replacing them with Param objects with an updated history
+        (unless keep_as_dict is True, in which case we leave them as dictionaries).
 
         If ``key`` is not present in the dictionary, and no default was specified, we raise a
         ``ConfigurationError``, instead of the typical ``KeyError``.
@@ -247,9 +260,12 @@ class Params(MutableMapping):
                 raise ConfigurationError("key \"{}\" is required at location \"{}\"".format(key, self.history))
         else:
             value = self.params.pop(key, default)
-        if not isinstance(value, dict):
+
+        if keep_as_dict or _is_dict_free(value):
             logger.info(self.history + key + " = " + str(value))  # type: ignore
-        return self._check_is_dict(key, value)
+            return value
+        else:
+            return self._check_is_dict(key, value)
 
     def pop_int(self, key: str, default: Any = DEFAULT) -> int:
         """
@@ -343,6 +359,8 @@ class Params(MutableMapping):
         ----------
         quiet: bool, optional (default = False)
             Whether to log the parameters before returning them as a dict.
+        infer_type_and_cast : bool, optional (default = False)
+            If True, we infer types and cast (e.g. things that look like floats to floats).
         """
         if infer_type_and_cast:
             params_as_dict = infer_and_cast(self.params)
@@ -504,6 +522,19 @@ class Params(MutableMapping):
 
         return order_dict(params_dict, order_func)
 
+    def get_hash(self) -> str:
+        """
+        Returns a hash code representing the current state of this ``Params`` object.  We don't
+        want to implement ``__hash__`` because that has deeper python implications (and this is a
+        mutable object), but this will give you a representation of the current state.
+        We use `zlib.adler32` instead of Python's builtin `hash` because the random seed for the
+        latter is reset on each new program invocation, as discussed here:
+        https://stackoverflow.com/questions/27954892/deterministic-hashing-in-python-3.
+        """
+        dumped = json.dumps(self.params, sort_keys=True)
+        hashed = zlib.adler32(dumped.encode())
+        return str(hashed)
+
 
 def pop_choice(params: Dict[str, Any],
                key: str,
@@ -524,10 +555,13 @@ def pop_choice(params: Dict[str, Any],
     return value
 
 
-def _replace_none(dictionary: Dict[str, Any]) -> Dict[str, Any]:
-    for key in dictionary.keys():
-        if dictionary[key] == "None":
-            dictionary[key] = None
-        elif isinstance(dictionary[key], dict):
-            dictionary[key] = _replace_none(dictionary[key])
-    return dictionary
+def _replace_none(params: Any) -> Any:
+    if params == "None":
+        return None
+    elif isinstance(params, dict):
+        for key, value in params.items():
+            params[key] = _replace_none(value)
+        return params
+    elif isinstance(params, list):
+        return [_replace_none(value) for value in params]
+    return params

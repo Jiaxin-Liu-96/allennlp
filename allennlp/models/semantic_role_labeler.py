@@ -1,4 +1,5 @@
 from typing import Dict, List, TextIO, Optional, Any
+import warnings
 
 from overrides import overrides
 import torch
@@ -7,14 +8,14 @@ import torch.nn.functional as F
 
 from allennlp.common.checks import check_dimensions_match
 from allennlp.data import Vocabulary
+from allennlp.models.srl_util import convert_bio_tags_to_conll_format, write_bio_formatted_tags_to_file
 from allennlp.modules import Seq2SeqEncoder, TimeDistributed, TextFieldEmbedder
 from allennlp.modules.token_embedders import Embedding
 from allennlp.models.model import Model
 from allennlp.nn import InitializerApplicator, RegularizerApplicator
 from allennlp.nn.util import get_text_field_mask, sequence_cross_entropy_with_logits
 from allennlp.nn.util import get_lengths_from_binary_sequence_mask, viterbi_decode
-from allennlp.training.metrics import SpanBasedF1Measure
-
+from allennlp.training.metrics.srl_eval_scorer import SrlEvalScorer, DEFAULT_SRL_EVAL_PATH
 
 @Model.register("srl")
 class SemanticRoleLabeler(Model):
@@ -28,6 +29,9 @@ class SemanticRoleLabeler(Model):
     containing whether or not a word is the verbal predicate to generate predictions for in
     the sentence. Additionally, during inference, Viterbi decoding is applied to constrain
     the predictions to contain valid BIO sequences.
+
+    Specifically, the model expects and outputs IOB2-formatted tags, where the
+    B- tag is used in the beginning of every chunk (i.e. all chunks start with the B- tag).
 
     Parameters
     ----------
@@ -48,6 +52,9 @@ class SemanticRoleLabeler(Model):
         Whether or not to use label smoothing on the labels when computing cross entropy loss.
     ignore_span_metric: ``bool``, optional (default = False)
         Whether to calculate span loss, which is irrelevant when predicting BIO for Open Information Extraction.
+    srl_eval_path: ``str``, optional (default=``DEFAULT_SRL_EVAL_PATH``)
+        The path to the srl-eval.pl script. By default, will use the srl-eval.pl included with allennlp,
+        which is located at allennlp/tools/srl-eval.pl . If ``None``, srl-eval.pl is not used.
     """
     def __init__(self, vocab: Vocabulary,
                  text_field_embedder: TextFieldEmbedder,
@@ -57,15 +64,19 @@ class SemanticRoleLabeler(Model):
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None,
                  label_smoothing: float = None,
-                 ignore_span_metric: bool = False) -> None:
+                 ignore_span_metric: bool = False,
+                 srl_eval_path: str = DEFAULT_SRL_EVAL_PATH) -> None:
         super(SemanticRoleLabeler, self).__init__(vocab, regularizer)
 
         self.text_field_embedder = text_field_embedder
         self.num_classes = self.vocab.get_vocab_size("labels")
 
-        # For the span based evaluation, we don't want to consider labels
-        # for verb, because the verb index is provided to the model.
-        self.span_metric = SpanBasedF1Measure(vocab, tag_namespace="labels", ignore_classes=["V"])
+        if srl_eval_path is not None:
+            # For the span based evaluation, we don't want to consider labels
+            # for verb, because the verb index is provided to the model.
+            self.span_metric = SrlEvalScorer(srl_eval_path, ignore_classes=["V"])
+        else:
+            self.span_metric = None
 
         self.encoder = encoder
         # There are exactly 2 binary features for the verb predicate embedding.
@@ -140,19 +151,33 @@ class SemanticRoleLabeler(Model):
                                                                           sequence_length,
                                                                           self.num_classes])
         output_dict = {"logits": logits, "class_probabilities": class_probabilities}
+        # We need to retain the mask in the output dictionary
+        # so that we can crop the sequences to remove padding
+        # when we do viterbi inference in self.decode.
+        output_dict["mask"] = mask
+
         if tags is not None:
             loss = sequence_cross_entropy_with_logits(logits,
                                                       tags,
                                                       mask,
                                                       label_smoothing=self._label_smoothing)
-            if not self.ignore_span_metric:
-                self.span_metric(class_probabilities, tags, mask)
+            if not self.ignore_span_metric and self.span_metric is not None and not self.training:
+                batch_verb_indices = [example_metadata["verb_index"] for example_metadata in metadata]
+                batch_sentences = [example_metadata["words"] for example_metadata in metadata]
+                # Get the BIO tags from decode()
+                # TODO (nfliu): This is kind of a hack, consider splitting out part
+                # of decode() to a separate function.
+                batch_bio_predicted_tags = self.decode(output_dict).pop("tags")
+                batch_conll_predicted_tags = [convert_bio_tags_to_conll_format(tags) for
+                                              tags in batch_bio_predicted_tags]
+                batch_bio_gold_tags = [example_metadata["gold_tags"] for example_metadata in metadata]
+                batch_conll_gold_tags = [convert_bio_tags_to_conll_format(tags) for
+                                         tags in batch_bio_gold_tags]
+                self.span_metric(batch_verb_indices,
+                                 batch_sentences,
+                                 batch_conll_predicted_tags,
+                                 batch_conll_gold_tags)
             output_dict["loss"] = loss
-
-        # We need to retain the mask in the output dictionary
-        # so that we can crop the sequences to remove padding
-        # when we do viterbi inference in self.decode.
-        output_dict["mask"] = mask
 
         words, verbs = zip(*[(x["words"], x["verb"]) for x in metadata])
         if metadata is not None:
@@ -176,8 +201,10 @@ class SemanticRoleLabeler(Model):
             predictions_list = [all_predictions]
         all_tags = []
         transition_matrix = self.get_viterbi_pairwise_potentials()
+        start_transitions = self.get_start_transitions()
         for predictions, length in zip(predictions_list, sequence_lengths):
-            max_likelihood_sequence, _ = viterbi_decode(predictions[:length], transition_matrix)
+            max_likelihood_sequence, _ = viterbi_decode(predictions[:length], transition_matrix,
+                                                        allowed_start_transitions=start_transitions)
             tags = [self.vocab.get_token_from_index(x, namespace="labels")
                     for x in max_likelihood_sequence]
             all_tags.append(tags)
@@ -222,6 +249,27 @@ class SemanticRoleLabeler(Model):
                     transition_matrix[i, j] = float("-inf")
         return transition_matrix
 
+    def get_start_transitions(self):
+        """
+        In the BIO sequence, we cannot start the sequence with an I-XXX tag.
+        This transition sequence is passed to viterbi_decode to specify this constraint.
+
+        Returns
+        -------
+        start_transitions : torch.Tensor
+            The pairwise potentials between a START token and
+            the first token of the sequence.
+        """
+        all_labels = self.vocab.get_index_to_token_vocabulary("labels")
+        num_labels = len(all_labels)
+
+        start_transitions = torch.zeros(num_labels)
+
+        for i, label in all_labels.items():
+            if label[0] == "I":
+                start_transitions[i] = float("-inf")
+
+        return start_transitions
 
 def write_to_conll_eval_file(prediction_file: TextIO,
                              gold_file: TextIO,
@@ -230,8 +278,18 @@ def write_to_conll_eval_file(prediction_file: TextIO,
                              prediction: List[str],
                              gold_labels: List[str]):
     """
+    .. deprecated:: 0.8.4
+       The ``write_to_conll_eval_file`` function was deprecated in favor of the
+       identical ``write_bio_formatted_tags_to_file`` in version 0.8.4.
+
     Prints predicate argument predictions and gold labels for a single verbal
     predicate in a sentence to two provided file references.
+
+    The CoNLL SRL format is described in
+    `the shared task data README <https://www.lsi.upc.edu/~srlconll/conll05st-release/README>`_ .
+
+    This function expects IOB2-formatted tags, where the B- tag is used in the beginning
+    of every chunk (i.e. all chunks start with the B- tag).
 
     Parameters
     ----------
@@ -250,61 +308,12 @@ def write_to_conll_eval_file(prediction_file: TextIO,
     gold_labels : List[str], required.
         The gold BIO labels.
     """
-    verb_only_sentence = ["-"] * len(sentence)
-    if verb_index:
-        verb_only_sentence[verb_index] = sentence[verb_index]
-
-    conll_format_predictions = convert_bio_tags_to_conll_format(prediction)
-    conll_format_gold_labels = convert_bio_tags_to_conll_format(gold_labels)
-
-    for word, predicted, gold in zip(verb_only_sentence,
-                                     conll_format_predictions,
-                                     conll_format_gold_labels):
-        prediction_file.write(word.ljust(15))
-        prediction_file.write(predicted.rjust(15) + "\n")
-        gold_file.write(word.ljust(15))
-        gold_file.write(gold.rjust(15) + "\n")
-    prediction_file.write("\n")
-    gold_file.write("\n")
-
-
-def convert_bio_tags_to_conll_format(labels: List[str]):
-    """
-    Converts BIO formatted SRL tags to the format required for evaluation with the
-    official CONLL 2005 perl script. Spans are represented by bracketed labels,
-    with the labels of words inside spans being the same as those outside spans.
-    Beginning spans always have a opening bracket and a closing asterisk (e.g. "(ARG-1*" )
-    and closing spans always have a closing bracket (e.g. "*)" ). This applies even for
-    length 1 spans, (e.g "(ARG-0*)").
-
-    A full example of the conversion performed:
-
-    [B-ARG-1, I-ARG-1, I-ARG-1, I-ARG-1, I-ARG-1, O]
-    [ "(ARG-1*", "*", "*", "*", "*)", "*"]
-
-    Parameters
-    ----------
-    labels : List[str], required.
-        A list of BIO tags to convert to the CONLL span based format.
-
-    Returns
-    -------
-    A list of labels in the CONLL span based format.
-    """
-    sentence_length = len(labels)
-    conll_labels = []
-    for i, label in enumerate(labels):
-        if label == "O":
-            conll_labels.append("*")
-            continue
-        new_label = "*"
-        # Are we at the beginning of a new span, at the first word in the sentence,
-        # or is the label different from the previous one? If so, we are seeing a new label.
-        if label[0] == "B" or i == 0 or label[1:] != labels[i - 1][1:]:
-            new_label = "(" + label[2:] + new_label
-        # Are we at the end of the sentence, is the next word a new span, or is the next
-        # word not in a span? If so, we need to close the label span.
-        if i == sentence_length - 1 or labels[i + 1][0] == "B" or label[1:] != labels[i + 1][1:]:
-            new_label = new_label + ")"
-        conll_labels.append(new_label)
-    return conll_labels
+    warnings.warn("The 'write_to_conll_eval_file' function has been deprecated in favor of "
+                  "the identical 'write_bio_formatted_tags_to_file' function.",
+                  DeprecationWarning)
+    write_bio_formatted_tags_to_file(prediction_file,
+                                     gold_file,
+                                     verb_index,
+                                     sentence,
+                                     prediction,
+                                     gold_labels)

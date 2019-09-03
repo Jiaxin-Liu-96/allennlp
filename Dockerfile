@@ -1,4 +1,4 @@
-FROM python:3.6.8-jessie
+FROM python:3.6.8-stretch
 
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
@@ -33,16 +33,10 @@ RUN apt-get update --fix-missing && apt-get install -y \
     build-essential && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Java.
-RUN echo "deb http://http.debian.net/debian jessie-backports main" >>/etc/apt/sources.list
-RUN apt-get update
-RUN apt-get install -y -t jessie-backports openjdk-8-jdk
-
 # Copy select files needed for installing requirements.
 # We only copy what we need here so small changes to the repository does not trigger re-installation of the requirements.
 COPY requirements.txt .
-COPY scripts/install_requirements.sh scripts/install_requirements.sh
-RUN ./scripts/install_requirements.sh
+RUN pip install -r requirements.txt
 
 COPY scripts/ scripts/
 COPY allennlp/ allennlp/
@@ -69,6 +63,9 @@ RUN ./scripts/cache_models.py
 # Optional argument to set an environment variable with the Git SHA
 ARG SOURCE_COMMIT
 ENV ALLENNLP_SOURCE_COMMIT $SOURCE_COMMIT
+
+# Copy wrapper script to allow beaker to run resumable training workloads.
+COPY scripts/ai2-internal/resumable_train.sh /stage/allennlp
 
 LABEL maintainer="allennlp-contact@allenai.org"
 

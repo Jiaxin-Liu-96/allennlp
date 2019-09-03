@@ -3,7 +3,53 @@ The ``fine-tune`` subcommand is used to continue training (or `fine-tune`) a mod
 dataset` than the one it was originally trained on.  It requires a saved model archive file, a path
 to the data you will continue training with, and a directory in which to write the results.
 
-Run ``allennlp fine-tune --help`` for detailed usage information.
+.. code-block:: bash
+
+   $ allennlp fine-tune --help
+    usage: allennlp fine-tune [-h] -m MODEL_ARCHIVE -c CONFIG_FILE -s
+                              SERIALIZATION_DIR [-o OVERRIDES] [--extend-vocab]
+                              [--file-friendly-logging]
+                              [--batch-weight-key BATCH_WEIGHT_KEY]
+                              [--embedding-sources-mapping EMBEDDING_SOURCES_MAPPING]
+                              [--include-package INCLUDE_PACKAGE]
+
+    Continues training a saved model on a new dataset.
+
+    optional arguments:
+      -h, --help            show this help message and exit
+      -m MODEL_ARCHIVE, --model-archive MODEL_ARCHIVE
+                            path to the saved model archive from training on the
+                            original data
+      -c CONFIG_FILE, --config-file CONFIG_FILE
+                            configuration file to use for training. Format is the
+                            same as for the "train" command, but the "model"
+                            section is ignored.
+      -s SERIALIZATION_DIR, --serialization-dir SERIALIZATION_DIR
+                            directory in which to save the fine-tuned model and
+                            its logs
+      -o OVERRIDES, --overrides OVERRIDES
+                            a JSON structure used to override the training
+                            configuration (only affects the config_file, _not_ the
+                            model_archive)
+      --extend-vocab        if specified, we will use the instances in your new
+                            dataset to extend your vocabulary. If pretrained-file
+                            was used to initialize embedding layers, you may also
+                            need to pass --embedding-sources-mapping.
+      --file-friendly-logging
+                            outputs tqdm status on separate lines and slows tqdm
+                            refresh rate
+      --batch-weight-key BATCH_WEIGHT_KEY
+                            If non-empty, name of metric used to weight the loss
+                            on a per-batch basis.
+      --embedding-sources-mapping EMBEDDING_SOURCES_MAPPING
+                            a JSON dict defining mapping from embedding module
+                            path to embeddingpretrained-file used during training.
+                            If not passed, and embedding needs to be extended, we
+                            will try to use the original file paths used during
+                            training. If they are not available we will use random
+                            vectors for embedding extension.
+      --include-package INCLUDE_PACKAGE
+                            additional packages to include
 """
 import argparse
 import json
@@ -124,9 +170,13 @@ def fine_tune_model_from_file_paths(model_archive_path: str,
         :func:`fine_tune_model`.
     overrides : ``str``
         A JSON string that we will use to override values in the input parameter file.
+    extend_vocab: ``bool``, optional (default=False)
+        If ``True``, we use the new instances to extend your vocabulary.
     file_friendly_logging : ``bool``, optional (default=False)
         If ``True``, we make our output more friendly to saved model files.  We just pass this
         along to :func:`fine_tune_model`.
+    batch_weight_key : ``str``, optional (default="")
+        If non-empty, name of metric used to weight the loss on a per-batch basis.
     embedding_sources_mapping: ``str``, optional (default="")
         JSON string to define dict mapping from embedding paths used during training to
         the corresponding embedding filepaths available during fine-tuning.
@@ -163,19 +213,19 @@ def fine_tune_model(model: Model,
 
     Parameters
     ----------
-    archive : ``Archive``
-        A saved model archive that is the result of running the ``train`` command.
-    train_data_path : ``str``
-        Path to the training data to use for fine-tuning.
+    model : ``Model``
+        A model to fine tune.
+    params : ``Params``
+        A parameter object specifying an AllenNLP Experiment
     serialization_dir : ``str``
         The directory in which to save results and logs.
-    validation_data_path : ``str``, optional
-        Path to the validation data to use while fine-tuning.
     extend_vocab: ``bool``, optional (default=False)
         If ``True``, we use the new instances to extend your vocabulary.
     file_friendly_logging : ``bool``, optional (default=False)
         If ``True``, we add newlines to tqdm output, even on an interactive terminal, and we slow
         down tqdm's output to only once every 10 seconds.
+    batch_weight_key : ``str``, optional (default="")
+        If non-empty, name of metric used to weight the loss on a per-batch basis.
     embedding_sources_mapping: ``Dict[str, str]``, optional (default=None)
         mapping from model paths to the pretrained embedding filepaths
         used during fine-tuning.

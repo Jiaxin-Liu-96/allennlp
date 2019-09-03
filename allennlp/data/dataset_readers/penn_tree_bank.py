@@ -69,7 +69,7 @@ class PennTreeBankConstituencySpanDatasetReader(DatasetReader):
             self._strip_functional_tags(parse)
             # This is un-needed and clutters the label space.
             # All the trees also contain a root S node.
-            if parse.label() == "VROOT":
+            if parse.label() == "VROOT" or parse.label() == "TOP":
                 parse = parse[0]
             pos_tags = [x[1] for x in parse.pos()] if self._use_pos_tags else None
             yield self.text_to_instance(parse.leaves(), pos_tags, parse)
@@ -86,7 +86,7 @@ class PennTreeBankConstituencySpanDatasetReader(DatasetReader):
         ----------
         tokens : ``List[str]``, required.
             The tokens in a given sentence.
-        pos_tags ``List[str]``, optional, (default = None).
+        pos_tags : ``List[str]``, optional, (default = None).
             The POS tags for the words in the sentence.
         gold_tree : ``Tree``, optional (default = None).
             The gold parse tree to create span labels from.
@@ -134,10 +134,7 @@ class PennTreeBankConstituencySpanDatasetReader(DatasetReader):
             spans.append(SpanField(start, end, text_field))
 
             if gold_spans is not None:
-                if (start, end) in gold_spans.keys():
-                    gold_labels.append(gold_spans[(start, end)])
-                else:
-                    gold_labels.append("NO-LABEL")
+                gold_labels.append(gold_spans.get((start, end), "NO-LABEL"))
 
         metadata = {"tokens": tokens}
         if gold_tree:

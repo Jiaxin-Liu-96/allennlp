@@ -5,7 +5,7 @@ an installation by running the unit tests.
 .. code-block:: bash
 
     $ allennlp test-install --help
-    usage: allennlp test-install [-h] [--run-all]
+    usage: allennlp test-install [-h] [--run-all] [-k K]
                                  [--include-package INCLUDE_PACKAGE]
 
     Test that installation works by running the unit tests.
@@ -14,6 +14,7 @@ an installation by running the unit tests.
       -h, --help            show this help message and exit
       --run-all             By default, we skip tests that are slow or download
                             large files. This flag will run all tests.
+      -k K                  Limit tests by setting pytest -k argument
       --include-package INCLUDE_PACKAGE
                             additional packages to include
 """
@@ -40,6 +41,8 @@ class TestInstall(Subcommand):
         subparser.add_argument('--run-all', action="store_true",
                                help="By default, we skip tests that are slow "
                                "or download large files. This flag will run all tests.")
+        subparser.add_argument('-k', type=str, default=None,
+                               help="Limit tests by setting pytest -k argument")
 
         subparser.set_defaults(func=_run_test)
 
@@ -57,12 +60,21 @@ def _run_test(args: argparse.Namespace):
     os.chdir(module_parent)
     test_dir = os.path.join(module_parent, "allennlp")
     logger.info("Running tests at %s", test_dir)
-    if args.run_all:
-        # TODO(nfliu): remove this when notebooks have been rewritten as markdown.
-        exit_code = pytest.main([test_dir, '--color=no', '-k', 'not notebooks_test'])
+
+    if args.k:
+        pytest_k = ['-k', args.k]
+        pytest_m = ['-m', 'not java']
+        if args.run_all:
+            logger.warning("the argument '-k' overwrites '--run-all'.")
+    elif args.run_all:
+        pytest_k = []
+        pytest_m = []
     else:
-        exit_code = pytest.main([test_dir, '--color=no', '-k', 'not sniff_test and not notebooks_test',
-                                 '-m', 'not java'])
+        pytest_k = ['-k', 'not sniff_test']
+        pytest_m = ['-m', 'not java']
+
+    exit_code = pytest.main([test_dir, '--color=no'] + pytest_k + pytest_m)
+
     # Change back to original working directory after running tests
     os.chdir(initial_working_dir)
     exit(exit_code)

@@ -7,17 +7,18 @@ as named arguments to the constructor.
 
 The available initialization functions are
 
-* `"normal" <http://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.normal_>`_
-* `"uniform" <http://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.uniform_>`_
-* `"constant" <http://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.constant_>`_
-* `"eye" <http://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.eye_>`_
-* `"dirac" <http://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.dirac_>`_
-* `"xavier_uniform" <http://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.xavier_uniform_>`_
-* `"xavier_normal" <http://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.xavier_normal_>`_
-* `"kaiming_uniform" <http://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.kaiming_uniform_>`_
-* `"kaiming_normal" <http://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.kaiming_normal_>`_
-* `"orthogonal" <http://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.orthogonal_>`_
-* `"sparse" <http://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.sparse_>`_
+* `"normal" <https://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.normal_>`_
+* `"uniform" <https://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.uniform_>`_
+* `"constant" <https://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.constant_>`_
+* `"eye" <https://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.eye_>`_
+* `"dirac" <https://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.dirac_>`_
+* `"xavier_uniform" <https://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.xavier_uniform_>`_
+* `"xavier_normal" <https://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.xavier_normal_>`_
+* `"kaiming_uniform"
+  <https://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.kaiming_uniform_>`_
+* `"kaiming_normal" <https://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.kaiming_normal_>`_
+* `"orthogonal" <https://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.orthogonal_>`_
+* `"sparse" <https://pytorch.org/docs/master/nn.html?highlight=orthogonal#torch.nn.init.sparse_>`_
 * :func:`"block_orthogonal" <block_orthogonal>`
 * :func:`"uniform_unit_scaling" <uniform_unit_scaling>`
 * :class:`"pretrained" <PretrainedModelInitializer>`
@@ -25,7 +26,7 @@ The available initialization functions are
 import logging
 import re
 import math
-from typing import Callable, List, Tuple, Type, Iterable, Dict
+from typing import Callable, List, Tuple, Type, Dict
 import itertools
 from overrides import overrides
 
@@ -223,6 +224,19 @@ class PretrainedModelInitializer(Initializer):
            }
        ]
 
+    To initialize weights for all the parameters from a pretrained model (assuming their names
+    remain unchanged), use the following instead:
+
+        .. code-block:: js
+
+            [".*",
+                {
+                    "type": "pretrained",
+                    "weights_file_path": "best.th",
+                    "parameter_name_overrides": {}
+                }
+            ]
+
     Parameters
     ----------
     weights_file_path : ``str``, required
@@ -298,7 +312,7 @@ class InitializerApplicator:
             for initializer_regex, initializer in self._initializers:
                 allow = self._prevent_regex is None or not bool(re.search(self._prevent_regex, name))
                 if allow and re.search(initializer_regex, name):
-                    logger.info("Initializing %s using %s intitializer", name, initializer_regex)
+                    logger.info("Initializing %s using %s initializer", name, initializer_regex)
                     initializer(parameter, parameter_name=name)
                     unused_regexes.discard(initializer_regex)
                     break
@@ -314,7 +328,7 @@ class InitializerApplicator:
             logger.info("   %s", name)
 
     @classmethod
-    def from_params(cls, params: Iterable[Tuple[str, Params]] = ()) -> "InitializerApplicator":  # type: ignore
+    def from_params(cls, params: List[Tuple[str, Params]] = None) -> "InitializerApplicator":
         """
         Converts a Params object into an InitializerApplicator. The json should
         be formatted as follows::
@@ -345,7 +359,7 @@ class InitializerApplicator:
         An InitializerApplicator containing the specified initializers.
         """
         # pylint: disable=arguments-differ
-
+        params = params or []
         is_prevent = lambda item: item == "prevent" or item == {"type": "prevent"}
         prevent_regexes = [param[0] for param in params if is_prevent(param[1])]
         params = [param for param in params if param[1] if not is_prevent(param[1])]
